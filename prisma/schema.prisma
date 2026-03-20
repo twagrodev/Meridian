@@ -1,0 +1,281 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+// ─── Enums (modeled as string fields for SQLite compatibility) ─────────
+
+// UserRole: OPS_MANAGER, LOGISTICS_COORD, CUSTOMS_SPEC, DOC_CLERK
+// ShipmentStatus: DRAFT, BOOKED, IN_TRANSIT, AT_PORT, CUSTOMS_HOLD, CUSTOMS_CLEARED, DELIVERED, CANCELLED
+// ContainerType: REEFER_20, REEFER_40, DRY_20, DRY_40
+// DocumentType: BL, AN, INV, FT_INV, INV_OD, EUR1, PL, QR, WC, COI, OTHER
+// DocumentStatus: UPLOADED, PROCESSING, CLASSIFIED, MATCHED, FAILED, MANUAL
+// CustomsStatus: PENDING, SUBMITTED, UNDER_REVIEW, CLEARED, RELEASED, REJECTED
+// QualityGrade: PREMIUM, GRADE_A, GRADE_B, REJECTED
+// TransportMode: SEA, ROAD, RAIL, AIR
+
+// ─── User ──────────────────────────────────────────────────────────────
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String
+  password  String
+  role      String   @default("DOC_CLERK") // UserRole
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  shipments   Shipment[]
+  documents   Document[]
+  auditLogs   AuditLog[]
+  inspections QualityInspection[]
+}
+
+// ─── Vessel ────────────────────────────────────────────────────────────
+
+model Vessel {
+  id         String    @id @default(cuid())
+  name       String
+  imo        String?   @unique
+  flag       String?
+  carrier    String?
+  capacity   Int?
+  currentEta DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  deletedAt  DateTime?
+
+  containers Container[]
+  shipments  Shipment[]
+}
+
+// ─── Container ─────────────────────────────────────────────────────────
+
+model Container {
+  id            String    @id @default(cuid())
+  containerCode String   @unique
+  type          String    @default("REEFER_40") // ContainerType
+  sealNumber    String?
+  grossWeight   Float?
+  nettWeight    Float?
+  tareWeight    Float?
+  boxes         Int?
+  status        String    @default("EMPTY")
+  vesselId      String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
+
+  vessel              Vessel?              @relation(fields: [vesselId], references: [id])
+  shipmentContainers  ShipmentContainer[]
+  documents           Document[]
+  inspections         QualityInspection[]
+  scanEvents          ScanEvent[]
+}
+
+// ─── Producer ──────────────────────────────────────────────────────────
+
+model Producer {
+  id        String   @id @default(cuid())
+  name      String
+  code      String?  @unique
+  country   String?
+  floId     String?
+  organic   Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  shipments Shipment[]
+}
+
+// ─── Shipment ──────────────────────────────────────────────────────────
+
+model Shipment {
+  id              String    @id @default(cuid())
+  blNumber        String?
+  lotNumber       String?
+  status          String    @default("DRAFT") // ShipmentStatus
+  origin          String?
+  destination     String?
+  etd             DateTime?
+  eta             DateTime?
+  actualArrival   DateTime?
+  incoterms       String?
+  notes           String?
+  producerId      String?
+  vesselId        String?
+  createdById     String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  deletedAt       DateTime?
+
+  producer            Producer?            @relation(fields: [producerId], references: [id])
+  vessel              Vessel?              @relation(fields: [vesselId], references: [id])
+  createdBy           User?                @relation(fields: [createdById], references: [id])
+  containers          ShipmentContainer[]
+  documents           Document[]
+  customsDeclarations CustomsDeclaration[]
+  dispatchPlans       DispatchPlan[]
+  auditLogs           AuditLog[]
+}
+
+// ─── ShipmentContainer (join) ──────────────────────────────────────────
+
+model ShipmentContainer {
+  id          String   @id @default(cuid())
+  shipmentId  String
+  containerId String
+  createdAt   DateTime @default(now())
+
+  shipment  Shipment  @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  container Container @relation(fields: [containerId], references: [id])
+
+  @@unique([shipmentId, containerId])
+}
+
+// ─── Document ──────────────────────────────────────────────────────────
+
+model Document {
+  id              String    @id @default(cuid())
+  fileName        String
+  originalName    String
+  mimeType        String?
+  fileSize        Int?
+  docType         String?   // DocumentType
+  docStatus       String    @default("UPLOADED") // DocumentStatus
+  extractedFields String?   // JSON string (SQLite doesn't have JSONB)
+  ocrText         String?
+  confidence      Float?
+  shipmentId      String?
+  containerId     String?
+  uploadedById    String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  deletedAt       DateTime?
+
+  shipment  Shipment?  @relation(fields: [shipmentId], references: [id])
+  container Container? @relation(fields: [containerId], references: [id])
+  uploadedBy User?     @relation(fields: [uploadedById], references: [id])
+}
+
+// ─── CustomsDeclaration ────────────────────────────────────────────────
+
+model CustomsDeclaration {
+  id               String    @id @default(cuid())
+  declarationNumber String?
+  status           String    @default("PENDING") // CustomsStatus
+  submittedAt      DateTime?
+  clearedAt        DateTime?
+  releasedAt       DateTime?
+  notes            String?
+  shipmentId       String
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  shipment Shipment @relation(fields: [shipmentId], references: [id])
+}
+
+// ─── QualityInspection ─────────────────────────────────────────────────
+
+model QualityInspection {
+  id          String    @id @default(cuid())
+  grade       String?   // QualityGrade
+  score       Float?
+  moisture    Float?
+  pulpTemp    Float?
+  crownColor  String?
+  defects     String?   // JSON string
+  notes       String?
+  photos      String?   // JSON array of URLs
+  containerId String
+  inspectorId String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  container Container @relation(fields: [containerId], references: [id])
+  inspector User?     @relation(fields: [inspectorId], references: [id])
+}
+
+// ─── DispatchPlan ──────────────────────────────────────────────────────
+
+model DispatchPlan {
+  id            String    @id @default(cuid())
+  scheduledDate DateTime?
+  status        String    @default("PLANNED")
+  destination   String?
+  notes         String?
+  shipmentId    String
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  shipment      Shipment       @relation(fields: [shipmentId], references: [id])
+  transportLegs TransportLeg[]
+}
+
+// ─── TransportLeg ──────────────────────────────────────────────────────
+
+model TransportLeg {
+  id             String    @id @default(cuid())
+  mode           String    @default("ROAD") // TransportMode
+  carrier        String?
+  origin         String?
+  destination    String?
+  departureTime  DateTime?
+  arrivalTime    DateTime?
+  status         String    @default("PLANNED")
+  trackingRef    String?
+  dispatchPlanId String
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  dispatchPlan DispatchPlan @relation(fields: [dispatchPlanId], references: [id])
+}
+
+// ─── Warehouse ─────────────────────────────────────────────────────────
+
+model Warehouse {
+  id        String   @id @default(cuid())
+  name      String
+  code      String   @unique
+  location  String?
+  capacity  Int?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  scanEvents ScanEvent[]
+}
+
+// ─── AuditLog ──────────────────────────────────────────────────────────
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  action     String
+  entityType String
+  entityId   String
+  metadata   String?  // JSON string
+  userId     String?
+  shipmentId String?
+  createdAt  DateTime @default(now())
+
+  user     User?     @relation(fields: [userId], references: [id])
+  shipment Shipment? @relation(fields: [shipmentId], references: [id])
+}
+
+// ─── ScanEvent ─────────────────────────────────────────────────────────
+
+model ScanEvent {
+  id          String   @id @default(cuid())
+  scanType    String   @default("BARCODE")
+  scannedCode String
+  result      String?  // JSON string
+  containerId String?
+  warehouseId String?
+  createdAt   DateTime @default(now())
+
+  container Container? @relation(fields: [containerId], references: [id])
+  warehouse Warehouse? @relation(fields: [warehouseId], references: [id])
+}
