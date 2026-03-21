@@ -1,5 +1,5 @@
 import { getShipmentArrivals, getAvailableWeeks } from "@/lib/queries/shipment-arrivals";
-import { getColumnPreferences } from "@/lib/actions/column-prefs";
+import { getColumnPreferences, getTablePreferences } from "@/lib/actions/column-prefs";
 import { ArrivalsTable } from "./arrivals-table";
 import { WeekFilter } from "./week-filter";
 
@@ -11,10 +11,11 @@ export default async function ShipmentsPage({
   const params = await searchParams;
   const weekParam = params.week ? Number(params.week) : undefined;
 
-  const [rows, weeks, columnPrefs] = await Promise.all([
+  const [rows, weeks, columnPrefs, tablePrefs] = await Promise.all([
     getShipmentArrivals(weekParam),
     getAvailableWeeks(),
     getColumnPreferences(),
+    getTablePreferences(),
   ]);
 
   const uniqueLots = new Set(rows.map((r) => r.lot)).size;
@@ -41,6 +42,7 @@ export default async function ShipmentsPage({
       <ArrivalsTable
         data={rows}
         initialColumnPrefs={columnPrefs}
+        initialTablePrefs={tablePrefs}
         kpis={{ lots: uniqueLots, lineItems: rows.length, containers: uniqueContainers, boxes: totalAmount, vessels: uniqueVessels }}
       />
     </div>

@@ -15,7 +15,8 @@ import { ColumnManagerButton } from "./column-manager";
 import { getCellContext, hasCellContext } from "./cell-contexts";
 import { TrafficLight, getTrafficTooltip, worstStatus, INLINE_TRAFFIC_COLUMNS, STATUS_ONLY_COLUMNS } from "@/components/shared/TrafficLight";
 import type { ShipmentRow } from "@/lib/queries/shipment-arrivals";
-import type { ColumnPreference } from "@/lib/actions/column-prefs";
+import type { ColumnPreference, TablePrefs } from "@/lib/actions/column-prefs";
+import { saveTablePreferences } from "@/lib/actions/column-prefs";
 
 /**
  * Normalize a date input: accepts D-M, DD-M, D-MM, DD-MM and pads to DD-MM.
@@ -55,7 +56,7 @@ const DAY_COLORS: Record<string, string> = {
 };
 
 // Columns that do NOT merge in multi-line lots
-const NO_MERGE_KEYS = new Set(["brand", "customer", "amount", "order", "qcInstructions"]);
+const NO_MERGE_KEYS = new Set(["brand", "customer", "amount", "order", "qcInstructions", "productDesc"]);
 
 function col(key: string, header: string, defaultWidth: number, opts?: Partial<ColDef>): ColDef {
   return { key: key as ColDef["key"], header, defaultWidth, mergeInGroup: !NO_MERGE_KEYS.has(key), ...opts };
@@ -64,7 +65,7 @@ function col(key: string, header: string, defaultWidth: number, opts?: Partial<C
 // 34 columns in default order
 export const ALL_COLUMNS: ColDef[] = [
   col("_rowNum", "#", 40, { align: "center", isRowNum: true }),
-  col("dateInDay", "Day", 48, { align: "center" }),
+  col("dateInDay", "Day", 52, { align: "center" }),
   col("week", "Week", 50),
   col("lot", "Lot", 60),
   col("packingDate", "Packing date", 85),
@@ -374,28 +375,32 @@ export interface KpiData {
 export function ArrivalsTable({
   data,
   initialColumnPrefs,
+  initialTablePrefs,
   kpis,
 }: {
   data: ShipmentRow[];
   initialColumnPrefs: ColumnPreference[] | null;
+  initialTablePrefs: TablePrefs | null;
   kpis: KpiData;
 }) {
   const router = useRouter();
   const [search, setSearch] = useState("");
   const [showKpis, setShowKpis] = useState(true);
-  const [sortKey, setSortKey] = useState<SortKey>("lot");
-  const [sortDir, setSortDir] = useState<SortDir>("asc");
+  const [sortKey, setSortKey] = useState<SortKey>(initialTablePrefs?.sortKey ?? "lot");
+  const [sortDir, setSortDir] = useState<SortDir>(initialTablePrefs?.sortDir ?? "asc");
   const [columnFilters, setColumnFilters] = useState<Record<string, Set<string>>>({});
   const [selectedLot, setSelectedLot] = useState<number | null>(null);
   const [selectedCellKey, setSelectedCellKey] = useState<string | null>(null);
   const [selectedCellRowId, setSelectedCellRowId] = useState<string | null>(null);
   const [editOpen, setEditOpen] = useState(false);
-  const [isCollapsed, setIsCollapsed] = useState(false);
-  const [showTime, setShowTime] = useState(true);
-  const [showCustoms, setShowCustoms] = useState(true);
+  const [isCollapsed, setIsCollapsed] = useState(initialTablePrefs?.isCollapsed ?? false);
+  const [showTime, setShowTime] = useState(initialTablePrefs?.showTime ?? true);
+  const [showCustoms, setShowCustoms] = useState(initialTablePrefs?.showCustoms ?? true);
   const [columnPrefs, setColumnPrefs] = useState<ColumnPreference[]>(
     () => initialColumnPrefs ?? buildDefaultPrefs()
   );
+  const tablePrefsSaveTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const savedColWidthsRef = useRef<Record<string, number> | null>(initialTablePrefs?.colWidths ?? null);
 
   // Resolve prefs → visible ColDefs in order, merging with ALL_COLUMNS
   const CUSTOMS_KEYS = new Set(["t1", "weighing", "custReg", "custStatus", "mrnArn"]);
@@ -420,12 +425,17 @@ export function ArrivalsTable({
     return cols;
   }, [columnPrefs, showCustoms]);
 
-  const [colWidths, setColWidths] = useState<number[]>(() => visibleColumns.map((c) => c.defaultWidth));
+  const resolveWidths = useCallback((cols: ColDef[]) => {
+    const saved = savedColWidthsRef.current;
+    return cols.map((c) => saved?.[c.header] ?? c.defaultWidth);
+  }, []);
+
+  const [colWidths, setColWidths] = useState<number[]>(() => resolveWidths(visibleColumns));
 
   // Re-sync widths when visible columns change
   useEffect(() => {
-    setColWidths(visibleColumns.map((c) => c.defaultWidth));
-  }, [visibleColumns]);
+    setColWidths(resolveWidths(visibleColumns));
+  }, [visibleColumns, resolveWidths]);
 
   // If sorting by a column that became hidden, clear sort
   useEffect(() => {
@@ -452,9 +462,39 @@ export function ArrivalsTable({
     syncing.current = false;
   }, []);
 
+  // Persist table preferences (debounced)
+  const persistTablePrefs = useCallback((overrides?: Partial<TablePrefs>) => {
+    if (tablePrefsSaveTimer.current) clearTimeout(tablePrefsSaveTimer.current);
+    tablePrefsSaveTimer.current = setTimeout(() => {
+      const widthMap: Record<string, number> = {};
+      visibleColumns.forEach((c, i) => { widthMap[c.header] = colWidths[i]; });
+      if (overrides?.colWidths) Object.assign(widthMap, overrides.colWidths);
+      const prefs: TablePrefs = {
+        isCollapsed: overrides?.isCollapsed ?? isCollapsed,
+        showTime: overrides?.showTime ?? showTime,
+        showCustoms: overrides?.showCustoms ?? showCustoms,
+        colWidths: widthMap,
+        sortKey: overrides?.sortKey !== undefined ? overrides.sortKey : sortKey,
+        sortDir: overrides?.sortDir ?? sortDir,
+      };
+      savedColWidthsRef.current = prefs.colWidths;
+      saveTablePreferences(prefs).then((res) => {
+        if (res.error) toast.error(res.error);
+      });
+    }, 500);
+  }, [visibleColumns, colWidths, isCollapsed, showTime, showCustoms, sortKey, sortDir]);
+
   const totalWidth = colWidths.reduce((a, b) => a + b, 0);
   function resizeCol(index: number, delta: number) {
-    setColWidths((prev) => { const next = [...prev]; next[index] = Math.max(30, next[index] + delta); return next; });
+    setColWidths((prev) => {
+      const next = [...prev];
+      next[index] = Math.max(30, next[index] + delta);
+      // Persist widths (debounced via persistTablePrefs)
+      const widthMap: Record<string, number> = {};
+      visibleColumns.forEach((c, i) => { widthMap[c.header] = i === index ? next[index] : next[i]; });
+      persistTablePrefs({ colWidths: widthMap });
+      return next;
+    });
   }
   // Sticky left offsets for first 3 columns (#, Week, Lot)
   // Sticky left offsets for first 4 columns (#, Day, Week, Lot)
@@ -467,8 +507,15 @@ export function ArrivalsTable({
   const [hoveredLot, setHoveredLot] = useState<number | null>(null);
 
   function handleSort(key: SortKey) {
-    if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-    else { setSortKey(key); setSortDir("asc"); }
+    if (sortKey === key) {
+      const next = sortDir === "asc" ? "desc" : "asc";
+      setSortDir(next);
+      persistTablePrefs({ sortKey: key, sortDir: next });
+    } else {
+      setSortKey(key);
+      setSortDir("asc");
+      persistTablePrefs({ sortKey: key, sortDir: "asc" });
+    }
   }
 
   // Column filter unique values (always from full data)
@@ -701,7 +748,7 @@ export function ArrivalsTable({
                 ? "bg-emerald-100 text-emerald-800 hover:bg-emerald-200 border border-emerald-300"
                 : "border border-input bg-transparent hover:bg-accent text-foreground",
             ].join(" ")}
-            onClick={() => setIsCollapsed((v) => !v)}
+            onClick={() => { setIsCollapsed((v) => { const next = !v; persistTablePrefs({ isCollapsed: next }); return next; }); }}
             title="Merge multi-brand containers into single rows"
           >
             <ChevronsUpDown className="h-3.5 w-3.5" />
@@ -719,7 +766,7 @@ export function ArrivalsTable({
                 ? "bg-emerald-100 text-emerald-800 hover:bg-emerald-200 border border-emerald-300"
                 : "border border-input bg-transparent hover:bg-accent text-foreground",
             ].join(" ")}
-            onClick={() => setShowTime((v) => !v)}
+            onClick={() => { setShowTime((v) => { const next = !v; persistTablePrefs({ showTime: next }); return next; }); }}
             title={showTime ? "Hide time from ETA/ETD" : "Show time on ETA/ETD"}
           >
             <Clock className="h-3.5 w-3.5" />
@@ -735,7 +782,7 @@ export function ArrivalsTable({
                 ? "bg-emerald-100 text-emerald-800 hover:bg-emerald-200 border border-emerald-300"
                 : "border border-input bg-transparent hover:bg-accent text-foreground",
             ].join(" ")}
-            onClick={() => setShowCustoms((v) => !v)}
+            onClick={() => { setShowCustoms((v) => { const next = !v; persistTablePrefs({ showCustoms: next }); return next; }); }}
             title={showCustoms ? "Hide customs columns" : "Show customs columns"}
           >
             <ShieldCheck className="h-3.5 w-3.5" />
@@ -870,11 +917,7 @@ export function ArrivalsTable({
                   : "#fafcfb";
 
               // Group borders (expanded, multi-line)
-              const thickTop = !isCollapsed && isMultiLine && (posInGroup === "first" || posInGroup === "only");
-              const thickBottom = !isCollapsed && isMultiLine && (posInGroup === "last" || posInGroup === "only");
-              const thinInternal = !isCollapsed && isMultiLine && (posInGroup === "middle" || posInGroup === "last");
-
-              // Selection borders
+              // Selection borders (thicker, colored) only when selected
               const isFirstOfSel = isSelected && (posInGroup === "first" || posInGroup === "only" || isCollapsed);
               const isLastOfSel = isSelected && (posInGroup === "last" || posInGroup === "only" || isCollapsed);
               const isMidOfSel = isSelected && !isFirstOfSel && !isLastOfSel;
@@ -888,14 +931,12 @@ export function ArrivalsTable({
                   className={[
                     "cursor-pointer",
                     // Selection borders
+                    // Selected: thick colored borders
                     isFirstOfSel ? "border-t-2 border-t-primary" : "",
                     isLastOfSel ? "border-b-2 border-b-primary" : "",
                     isMidOfSel ? "border-t border-border/30" : "",
-                    // Non-selected group borders
-                    !isSelected && thickTop ? "border-t-2 border-t-foreground/25" : "",
-                    !isSelected && thickBottom ? "border-b-2 border-b-foreground/25" : "",
-                    !isSelected && !thickBottom ? "border-b border-border" : "",
-                    !isSelected && thinInternal && !thickTop ? "border-t border-border/30" : "",
+                    // Non-selected: uniform thin border
+                    !isSelected ? "border-b border-border" : "",
                   ].join(" ")}
                   style={{
                     backgroundColor: rowBg,
@@ -912,9 +953,8 @@ export function ArrivalsTable({
                     const rowSpan = shouldMerge && isMultiLine && posInGroup === "first"
                       ? displayRows.filter((r) => r.lot === lot && !r.isCollapsedRow).length
                       : undefined;
-
                     const isSticky = ci < 4; // #, Day, Week, Lot are sticky
-                    const stickyLeft = ci === 0 ? 0 : ci === 1 ? colWidths[0] : ci === 2 ? colWidths[0] + colWidths[1] : 0;
+                    const stickyLeft = isSticky ? stickyLeftOffsets[ci] : 0;
                     const hasContext = hasCellContext(col.key);
                     const isCellSelected = isSelected && selectedCellKey === col.key && selectedCellRowId === displayRow.id;
 

@@ -23,6 +23,7 @@ export interface ShipmentRow {
   carrier: string | null;
   container: string | null;
   dateIn: string | null;
+  dateInDay: string | null;   // Mon, Tue, Wed, Thu, Fri, Sat, Sun
   dateOut: string | null;
   terminalStatus: string | null;
   inspType: string | null;
@@ -89,6 +90,7 @@ export async function getShipmentArrivals(weekNumber?: number): Promise<Shipment
     carrier: a.carrier,
     container: a.container,
     dateIn: fmtDate(a.dateIn),
+    dateInDay: a.dateIn ? (["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][a.dateIn.getUTCDay()]) : null,
     dateOut: fmtDate(a.dateOut),
     terminalStatus: a.terminalStatus,
     inspType: a.inspType,
