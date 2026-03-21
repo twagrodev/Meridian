@@ -17,6 +17,21 @@ import { TrafficLight, getTrafficTooltip, worstStatus, INLINE_TRAFFIC_COLUMNS, S
 import type { ShipmentRow } from "@/lib/queries/shipment-arrivals";
 import type { ColumnPreference } from "@/lib/actions/column-prefs";
 
+/**
+ * Compare Date_in (DD-MM) with ETD (DD-MM HH:MM).
+ * Returns true if dateIn is on or before ETD date (warning condition).
+ */
+function compareDdmmDates(dateIn: string, etd: string): boolean {
+  // dateIn is "DD-MM", etd is "DD-MM HH:MM"
+  const [dIn, mIn] = dateIn.split("-").map(Number);
+  const [dEtd, mEtd] = etd.split("-").map(Number);
+  if (!dIn || !mIn || !dEtd || !mEtd) return false;
+  // Compare month first, then day
+  if (mIn < mEtd) return true;
+  if (mIn > mEtd) return false;
+  return dIn <= dEtd;
+}
+
 type SortKey = string; // column key — may include computed keys like _rowNum, custStatus, inspStatus
 type SortDir = "asc" | "desc";
 
@@ -236,10 +251,12 @@ function InlineDateCell({
   value,
   rowId,
   field,
+  warn,
 }: {
   value: string | null;
   rowId: string;
   field: "dateIn" | "dateOut";
+  warn?: boolean;
 }) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
@@ -321,10 +338,12 @@ function InlineDateCell({
     <span
       onClick={startEdit}
       className={[
-        "cursor-pointer hover:underline hover:text-primary transition-colors",
+        "block w-full min-h-[1.25rem] cursor-pointer hover:underline hover:text-primary text-foreground transition-colors",
         saving ? "opacity-50" : "",
+        !localValue ? "hover:bg-primary/5 rounded" : "",
+        localValue && warn ? "bg-orange-100 text-orange-800 rounded px-1" : "",
       ].join(" ")}
-      title="Click to edit"
+      title={warn ? "Container pickup may be difficult — Date_in is on or before ETD" : "Click to edit"}
     >
       {localValue ?? "\u00A0"}
     </span>
@@ -939,7 +958,12 @@ export function ArrivalsTable({
                             <span className={`inline-flex items-center justify-center rounded px-1.5 py-0.5 text-[10px] font-semibold leading-none ${DAY_COLORS[String(val)] ?? "bg-gray-100 text-gray-700"}`}>{String(val)}</span>
                           )}
                           {(col.key === "dateIn" || col.key === "dateOut") && (
-                            <InlineDateCell value={val as string | null} rowId={displayRow.id} field={col.key as "dateIn" | "dateOut"} />
+                            <InlineDateCell
+                              value={val as string | null}
+                              rowId={displayRow.id}
+                              field={col.key as "dateIn" | "dateOut"}
+                              warn={col.key === "dateIn" && !!val && !!displayRow.etd && compareDdmmDates(String(val), displayRow.etd)}
+                            />
                           )}
                           {!col.isRowNum && col.key !== "dateInDay" && col.key !== "dateIn" && col.key !== "dateOut" && !isStatusCol && (val != null ? String(val) : "")}
                         </div>
