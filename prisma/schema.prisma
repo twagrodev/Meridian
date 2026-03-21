@@ -332,6 +332,10 @@ model ShipmentArrival {
   coi             String?                           // Certificate of Inspection ref
   productDesc     String?                           // Product description
   mrnArn          String?                           // MRN or ARN reference
+  t1Status        String    @default("red")       // Traffic light: green/yellow/red
+  weighingStatus  String    @default("red")       // Traffic light: green/yellow/red
+  customsRegStatus String   @default("red")       // Traffic light: green/yellow/red
+  scanStatus      String    @default("red")       // Traffic light: green/yellow/red
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 

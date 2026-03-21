@@ -39,6 +39,10 @@ export interface ShipmentRow {
   coi: string | null;
   productDesc: string | null;
   mrnArn: string | null;
+  t1Status: string;
+  weighingStatus: string;
+  customsRegStatus: string;
+  scanStatus: string;
 }
 
 function fmtDateTime(d: Date | null): string | null {
@@ -105,6 +109,10 @@ export async function getShipmentArrivals(weekNumber?: number): Promise<Shipment
     coi: a.coi,
     productDesc: a.productDesc,
     mrnArn: a.mrnArn,
+    t1Status: a.t1Status,
+    weighingStatus: a.weighingStatus,
+    customsRegStatus: a.customsRegStatus,
+    scanStatus: a.scanStatus,
   }));
 }
 

@@ -391,6 +391,11 @@ async function main() {
         coi: str(row["COI"]),
         productDesc: str(row["Product_desc"]),
         mrnArn: str(row["MRN/ARN"]),
+        // Traffic light statuses derived from data
+        t1Status: row["T1"] === "NVT" ? "green" : (row["T1"] === "T1" && row["MRN/ARN"]) ? "yellow" : "red",
+        weighingStatus: row["Weighing"] === "OK" || row["Weighing"] === "NVT" ? "green" : row["Weighing"] === "FYCO" ? "yellow" : "red",
+        customsRegStatus: row["Customs_reg"] === "IM A" ? "green" : row["Customs_reg"] === "EX A" ? "yellow" : "red",
+        scanStatus: row["Scan"] ? "green" : "red",
       },
     });
   }

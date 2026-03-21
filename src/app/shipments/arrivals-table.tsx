@@ -12,7 +12,8 @@ import {
 import { toast } from "sonner";
 import { EditShipmentSheet } from "./edit-sheet";
 import { ColumnManagerButton } from "./column-manager";
-import { getCellContext, hasCellContext, type CellContext } from "./cell-contexts";
+import { getCellContext, hasCellContext } from "./cell-contexts";
+import { TrafficLight, getTrafficTooltip, worstStatus, TRAFFIC_LIGHT_COLUMNS } from "@/components/shared/TrafficLight";
 import type { ShipmentRow } from "@/lib/queries/shipment-arrivals";
 import type { ColumnPreference } from "@/lib/actions/column-prefs";
 
@@ -92,6 +93,10 @@ function buildLotGroups(rows: ShipmentRow[]): LotGroup[] {
           brand: "mix",
           amount: groupRows.reduce((sum, r) => sum + (r.amount ?? 0), 0),
           productDesc: `${groupRows.length} lines`,
+          t1Status: worstStatus(groupRows.map((r) => r.t1Status)),
+          weighingStatus: worstStatus(groupRows.map((r) => r.weighingStatus)),
+          customsRegStatus: worstStatus(groupRows.map((r) => r.customsRegStatus)),
+          scanStatus: worstStatus(groupRows.map((r) => r.scanStatus)),
         }
       : first;
     return { lot, rows: groupRows, mergedRow, isMultiLine };
@@ -656,6 +661,7 @@ export function ArrivalsTable({
                           className={[
                             "overflow-hidden whitespace-nowrap text-ellipsis text-foreground transition-all duration-300 ease-in-out",
                             col.align === "right" ? "text-right tabular-nums" : "",
+                            TRAFFIC_LIGHT_COLUMNS[col.key] ? "inline-flex items-center gap-1.5" : "",
                           ].join(" ")}
                           style={{
                             maxHeight: hidden ? 0 : "1.75rem",
@@ -663,6 +669,15 @@ export function ArrivalsTable({
                             padding: hidden ? "0 0.5rem" : "0.25rem 0.5rem",
                           }}
                         >
+                          {TRAFFIC_LIGHT_COLUMNS[col.key] && (
+                            <TrafficLight
+                              status={displayRow[TRAFFIC_LIGHT_COLUMNS[col.key] as keyof ShipmentRow] as string}
+                              tooltip={getTrafficTooltip(
+                                TRAFFIC_LIGHT_COLUMNS[col.key],
+                                displayRow[TRAFFIC_LIGHT_COLUMNS[col.key] as keyof ShipmentRow] as string,
+                              )}
+                            />
+                          )}
                           {val != null ? String(val) : ""}
                         </div>
                       </td>
