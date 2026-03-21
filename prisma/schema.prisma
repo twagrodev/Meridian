@@ -279,3 +279,20 @@ model ScanEvent {
   container Container? @relation(fields: [containerId], references: [id])
   warehouse Warehouse? @relation(fields: [warehouseId], references: [id])
 }
+
+// ─── ComboSetting ─────────────────────────────────────────────
+// Ported from AgroDash combo_settings.json
+// Defines which extraction fields to display/use per carrier+docType combo
+
+model ComboSetting {
+  id        String   @id @default(cuid())
+  name      String   // e.g. "MSC BL", "Seatrade AN"
+  carrier   String?  // Carrier name or null for "all carriers"
+  docType   String   // Document type code (BL, AN, INV, etc.)
+  fields    String   // JSON array of field names to include
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([carrier, docType])
+}
