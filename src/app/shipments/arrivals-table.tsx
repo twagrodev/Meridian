@@ -12,6 +12,7 @@ import {
 import { toast } from "sonner";
 import { EditShipmentSheet } from "./edit-sheet";
 import { ColumnManagerButton } from "./column-manager";
+import { getCellContext, hasCellContext, type CellContext } from "./cell-contexts";
 import type { ShipmentRow } from "@/lib/queries/shipment-arrivals";
 import type { ColumnPreference } from "@/lib/actions/column-prefs";
 
@@ -209,6 +210,8 @@ export function ArrivalsTable({
   const [sortDir, setSortDir] = useState<SortDir>("asc");
   const [columnFilters, setColumnFilters] = useState<Record<string, Set<string>>>({});
   const [selectedLot, setSelectedLot] = useState<number | null>(null);
+  const [selectedCellKey, setSelectedCellKey] = useState<string | null>(null);
+  const [selectedCellRowId, setSelectedCellRowId] = useState<string | null>(null);
   const [editOpen, setEditOpen] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [columnPrefs, setColumnPrefs] = useState<ColumnPreference[]>(
@@ -368,26 +371,79 @@ export function ArrivalsTable({
 
   const selectedGroup = selectedLot != null ? sortedGroups.find((g) => g.lot === selectedLot) : null;
   const selectedRow = selectedGroup?.rows[0] ?? null;
+  const activeCellContext = selectedCellKey ? getCellContext(selectedCellKey) : null;
+  // The specific row whose cell was clicked (for cell-level actions)
+  const cellActionRow = selectedCellRowId
+    ? displayRows.find((r) => r.displayRow.id === selectedCellRowId)?.displayRow ?? selectedRow
+    : selectedRow;
 
   function toggleSelectLot(lot: number) {
+    if (selectedLot !== lot) {
+      setSelectedCellKey(null);
+      setSelectedCellRowId(null);
+    }
     setSelectedLot((prev) => (prev === lot ? null : lot));
   }
 
-  // Keyboard: ArrowUp/Down moves between lot groups, Escape deselects
+  function handleCellClick(e: React.MouseEvent, rowId: string, lot: number, colKey: string) {
+    // If row is not selected, just select the row — don't jump to cell
+    if (selectedLot !== lot) return; // let the row click handler fire
+    // Row IS selected — handle cell selection
+    if (!hasCellContext(colKey)) return; // no context for this column
+    e.stopPropagation(); // prevent row toggle
+    if (selectedCellKey === colKey && selectedCellRowId === rowId) {
+      // Same cell clicked again — deselect cell
+      setSelectedCellKey(null);
+      setSelectedCellRowId(null);
+    } else {
+      setSelectedCellKey(colKey);
+      setSelectedCellRowId(rowId);
+    }
+  }
+
+  // Clear cell selection when lot changes, collapse toggles, or edit opens
+  useEffect(() => { setSelectedCellKey(null); setSelectedCellRowId(null); }, [selectedLot, isCollapsed]);
+
+  // Clear cell if its column becomes hidden
+  useEffect(() => {
+    if (selectedCellKey && !visibleColumns.some((c) => c.key === selectedCellKey)) {
+      setSelectedCellKey(null); setSelectedCellRowId(null);
+    }
+  }, [visibleColumns, selectedCellKey]);
+
+  // Keyboard: Escape (cell→row→nothing), ArrowUp/Down (lot groups), Left/Right (cells with context)
   function handleKeyDown(e: React.KeyboardEvent) {
-    if (e.key === "Escape") { setSelectedLot(null); return; }
+    if (e.key === "Escape") {
+      if (selectedCellKey) { setSelectedCellKey(null); setSelectedCellRowId(null); }
+      else { setSelectedLot(null); }
+      return;
+    }
     if (e.key === "ArrowDown" || e.key === "ArrowUp") {
       e.preventDefault();
+      setSelectedCellKey(null); setSelectedCellRowId(null);
       const currentIdx = selectedLot != null ? sortedGroups.findIndex((g) => g.lot === selectedLot) : -1;
       let nextIdx: number;
       if (e.key === "ArrowDown") nextIdx = currentIdx < sortedGroups.length - 1 ? currentIdx + 1 : 0;
       else nextIdx = currentIdx > 0 ? currentIdx - 1 : sortedGroups.length - 1;
       setSelectedLot(sortedGroups[nextIdx].lot);
-      // Scroll the first row of the group into view
       let rowIdx = 0;
       for (let i = 0; i < nextIdx; i++) rowIdx += isCollapsed ? 1 : sortedGroups[i].rows.length;
       const el = tbodyRef.current?.children[rowIdx];
       if (el) (el as HTMLElement).scrollIntoView({ block: "nearest" });
+      return;
+    }
+    // Left/Right: move between context-enabled cells
+    if ((e.key === "ArrowLeft" || e.key === "ArrowRight") && selectedLot != null) {
+      e.preventDefault();
+      const contextCols = visibleColumns.filter((c) => hasCellContext(c.key));
+      if (contextCols.length === 0) return;
+      const curIdx = selectedCellKey ? contextCols.findIndex((c) => c.key === selectedCellKey) : -1;
+      let nextIdx: number;
+      if (e.key === "ArrowRight") nextIdx = curIdx < contextCols.length - 1 ? curIdx + 1 : 0;
+      else nextIdx = curIdx > 0 ? curIdx - 1 : contextCols.length - 1;
+      setSelectedCellKey(contextCols[nextIdx].key);
+      if (!selectedCellRowId && selectedRow) setSelectedCellRowId(selectedRow.id);
+      return;
     }
   }
 
@@ -397,7 +453,7 @@ export function ArrivalsTable({
   function handleTraces() { if (selectedRow) toast.info(`TRACES integration coming soon — Lot ${selectedRow.lot}, Container ${selectedRow.container ?? "N/A"}`); }
   function handleTrucking() { if (selectedRow) toast.info(`Trucking status — Lot ${selectedRow.lot}, Container ${selectedRow.container ?? "N/A"}, Transporter: ${selectedRow.transporter ?? "N/A"}`); }
   function handleDispatch() { if (selectedRow) router.push(`/dispatch?lot=${selectedRow.lot}`); }
-  function handleEdit() { if (selectedRow) setEditOpen(true); }
+  function handleEdit() { if (selectedRow) { setSelectedCellKey(null); setSelectedCellRowId(null); setEditOpen(true); } }
 
   return (
     <div onKeyDown={handleKeyDown} tabIndex={0} className="outline-none">
@@ -454,6 +510,33 @@ export function ArrivalsTable({
             <Button variant="outline" size="sm" className="h-7 gap-1.5 text-xs" onClick={handleDispatch}><Route className="h-3.5 w-3.5" /> Dispatch</Button>
             <Button variant="outline" size="sm" className="h-7 gap-1.5 text-xs" onClick={handleEdit}><Pencil className="h-3.5 w-3.5" /> Edit</Button>
           </div>
+
+          {/* Cell action bar */}
+          <div
+            className={["flex flex-wrap items-center gap-2 transition-all duration-150",
+              activeCellContext && cellActionRow ? "opacity-100 translate-y-0" : "opacity-0 translate-y-1 pointer-events-none h-0 overflow-hidden",
+            ].join(" ")}
+            aria-hidden={!activeCellContext}
+          >
+            <span className="h-5 w-px bg-border mx-0.5" aria-hidden="true" />
+            {activeCellContext && cellActionRow && (
+              <>
+                <span className="text-xs font-medium text-muted-foreground">{activeCellContext.label}:</span>
+                {activeCellContext.statusPanel?.(cellActionRow)}
+                {activeCellContext.actions.map((action) => (
+                  <Button
+                    key={action.label}
+                    variant="outline"
+                    size="sm"
+                    className="h-7 gap-1.5 text-xs border-primary/30 hover:border-primary/60"
+                    onClick={() => action.onClick(cellActionRow, router)}
+                  >
+                    {action.icon} {action.label}
+                  </Button>
+                ))}
+              </>
+            )}
+          </div>
         </div>
         <p className="text-xs text-muted-foreground shrink-0">
           {selectedRow && <span className="font-medium text-primary mr-2">Lot {selectedRow.lot}</span>}
@@ -499,24 +582,16 @@ export function ArrivalsTable({
           </thead>
           <tbody ref={tbodyRef}>
             {(() => {
-              // Pre-compute group index per lot for alternating colors by group (not by row)
-              const lotGroupIndex = new Map<number, number>();
-              let groupIdx = 0;
-              for (const g of sortedGroups) {
-                lotGroupIndex.set(g.lot, groupIdx);
-                groupIdx++;
-              }
               return displayRows.map(({ displayRow, lot, isMultiLine, posInGroup, isCollapsedRow }, ri) => {
-              const isEven = (lotGroupIndex.get(lot) ?? 0) % 2 === 0;
               const isSelected = lot === selectedLot;
               const hidden = isCollapsedRow;
-
               const isHovered = !hidden && !isSelected && lot === hoveredLot;
+
               const rowBg = isSelected
-                ? "#ffffff"
+                ? "#d0e8d8"
                 : isHovered
-                  ? "#e8f5e9"
-                  : isEven ? "var(--color-card, hsl(var(--card)))" : "var(--color-muted, hsl(var(--muted)))";
+                  ? "#edf5ef"
+                  : "#fafcfb";
 
               // Group borders (expanded, multi-line)
               const thickTop = !isCollapsed && isMultiLine && (posInGroup === "first" || posInGroup === "only");
@@ -558,19 +633,25 @@ export function ArrivalsTable({
                   {visibleColumns.map((col, ci) => {
                     const val = displayRow[col.key];
                     const isSticky = ci < 2;
+                    const hasContext = hasCellContext(col.key);
+                    const isCellSelected = isSelected && !hidden && selectedCellKey === col.key && selectedCellRowId === displayRow.id;
                     return (
                       <td key={col.key}
+                        onClick={(e) => !hidden && isSelected && hasContext && handleCellClick(e, displayRow.id, lot, col.key)}
                         className={[
                           "border-r border-border overflow-hidden",
                           isSticky ? "z-10" : "",
+                          isCellSelected ? "ring-2 ring-inset ring-primary rounded-sm z-20" : "",
+                          isSelected && !hidden && hasContext ? "cursor-pointer" : "",
                         ].join(" ")}
                         style={{
                           width: colWidths[ci], minWidth: colWidths[ci], maxWidth: colWidths[ci],
                           padding: 0,
                           ...(isSticky && !hidden ? { position: "sticky" as const, left: ci === 0 ? stickyLeft0 : stickyLeft1, backgroundColor: rowBg } : {}),
                           ...(isSticky && hidden ? { position: "sticky" as const, left: ci === 0 ? stickyLeft0 : stickyLeft1, backgroundColor: "transparent" } : {}),
-                        }}>
-                        {/* Animated inner div for smooth collapse/expand */}
+                        }}
+                        title={isSelected && hasContext && !hidden ? `Click for ${getCellContext(col.key)?.label}` : undefined}
+                      >
                         <div
                           className={[
                             "overflow-hidden whitespace-nowrap text-ellipsis text-foreground transition-all duration-300 ease-in-out",
