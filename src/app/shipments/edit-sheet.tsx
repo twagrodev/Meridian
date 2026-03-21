@@ -57,7 +57,7 @@ const FIELD_GROUPS: { title: string; fields: FieldDef[] }[] = [
     fields: [
       { key: "t1", label: "T1", type: "text" },
       { key: "weighing", label: "Weighing", type: "text" },
-      { key: "customsReg", label: "Customs_reg", type: "text" },
+      { key: "custReg", label: "Cust_reg", type: "text" },
       { key: "mrnArn", label: "MRN/ARN", type: "text" },
       { key: "coi", label: "COI", type: "text" },
     ],
@@ -68,7 +68,7 @@ const FIELD_GROUPS: { title: string; fields: FieldDef[] }[] = [
       { key: "dateIn", label: "Date_in", type: "text", readOnly: true },
       { key: "dateOut", label: "Date_out", type: "text", readOnly: true },
       { key: "terminalStatus", label: "Terminal_status", type: "text" },
-      { key: "scan", label: "Scan", type: "text" },
+      { key: "inspType", label: "Insp_type", type: "text" },
     ],
   },
   {

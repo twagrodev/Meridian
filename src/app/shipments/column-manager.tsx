@@ -180,9 +180,9 @@ function ColumnManagerSheet({
 
 // Default column keys in original order (must match COLUMNS in arrivals-table)
 const DEFAULT_KEYS = [
-  "Week", "Lot", "Packing date", "ETA", "ETD", "Terminal", "Vessel", "BL",
-  "Seal number(s)", "T1", "Weighing", "Customs_reg", "Carrier", "Container",
-  "Date_in", "Date_out", "Terminal_status", "Scan", "Transporter",
+  "#", "Week", "Lot", "Packing date", "ETA", "ETD", "Terminal", "Vessel", "BL",
+  "Seal number(s)", "T1", "Weighing", "Cust_reg", "Cust_status", "Carrier", "Container",
+  "Date_in", "Date_out", "Terminal_status", "Insp_type", "Insp_status", "Transporter",
   "QC instructions", "Warehouse", "Shipper", "Customer", "CoO", "Brand",
   "Package", "Order", "Amount", "COI", "Product_desc", "MRN/ARN",
 ];

@@ -371,13 +371,13 @@ async function main() {
         sealNumbers: str(row["Seal number(s)"]),
         t1: str(row["T1"]),
         weighing: str(row["Weighing"]),
-        customsReg: str(row["Customs_reg"]),
+        custReg: str(row["Customs_reg"]),
         carrier: str(row["Carrier"]),
         container: str(row["Container"]),
         dateIn: dt(row["Date_in"]),
         dateOut: dt(row["Date_out"]),
         terminalStatus: str(row["Terminal_status"]),
-        scan: str(row["Scan"]),
+        inspType: row["Scan"] === "x" ? "Scan" : null,
         transporter: str(row["Transporter"]),
         qcInstructions: str(row["QC instructions"]),
         warehouse: str(row["Warehouse"]),
@@ -394,8 +394,8 @@ async function main() {
         // Traffic light statuses derived from data
         t1Status: row["T1"] === "NVT" ? "green" : (row["T1"] === "T1" && row["MRN/ARN"]) ? "yellow" : "red",
         weighingStatus: row["Weighing"] === "OK" || row["Weighing"] === "NVT" ? "green" : row["Weighing"] === "FYCO" ? "yellow" : "red",
-        customsRegStatus: row["Customs_reg"] === "IM A" ? "green" : row["Customs_reg"] === "EX A" ? "yellow" : "red",
-        scanStatus: row["Scan"] ? "green" : "red",
+        custStatus: row["Customs_reg"] === "IM A" ? "green" : row["Customs_reg"] === "EX A" ? "yellow" : "red",
+        inspStatus: row["Scan"] ? "yellow" : "red",
       },
     });
   }

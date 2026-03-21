@@ -30,38 +30,48 @@ export const TRAFFIC_LIGHT_TOOLTIPS: Record<string, Record<Status, string>> = {
     yellow: "Physical control (FYCO) required",
     red: "Weighing not completed",
   },
-  customsRegStatus: {
+  custStatus: {
     green: "Import declaration filed (IM A)",
     yellow: "Export declaration — needs attention (EX A)",
     red: "Not yet registered (ZZC)",
   },
-  scanStatus: {
-    green: "Container scanned",
-    yellow: "Scan pending",
-    red: "Not yet scanned",
+  inspStatus: {
+    green: "Inspection completed",
+    yellow: "Inspection scheduled",
+    red: "No inspection scheduled",
   },
 };
 
-/**
- * Get the tooltip text for a traffic light status field.
- */
 export function getTrafficTooltip(field: string, status: string): string {
   return TRAFFIC_LIGHT_TOOLTIPS[field]?.[status as Status] ?? status;
 }
 
-/**
- * Worst-case merge for collapsed lot groups: red > yellow > green.
- */
 export function worstStatus(statuses: string[]): string {
   if (statuses.includes("red")) return "red";
   if (statuses.includes("yellow")) return "yellow";
   return "green";
 }
 
-/** Map column key → status field name */
-export const TRAFFIC_LIGHT_COLUMNS: Record<string, string> = {
+/**
+ * Columns that show an INLINE traffic light dot (dot + text in same cell).
+ * Maps column data key → status field name.
+ */
+export const INLINE_TRAFFIC_COLUMNS: Record<string, string> = {
   t1: "t1Status",
   weighing: "weighingStatus",
-  customsReg: "customsRegStatus",
-  scan: "scanStatus",
+};
+
+/**
+ * Dedicated status-only columns (dot only, no text).
+ * Maps column data key → status field name.
+ */
+export const STATUS_ONLY_COLUMNS: Record<string, string> = {
+  custStatus: "custStatus",
+  inspStatus: "inspStatus",
+};
+
+/** Combined: all columns that have traffic light data */
+export const TRAFFIC_LIGHT_COLUMNS: Record<string, string> = {
+  ...INLINE_TRAFFIC_COLUMNS,
+  ...STATUS_ONLY_COLUMNS,
 };

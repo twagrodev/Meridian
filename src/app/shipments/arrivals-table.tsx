@@ -13,48 +13,66 @@ import { toast } from "sonner";
 import { EditShipmentSheet } from "./edit-sheet";
 import { ColumnManagerButton } from "./column-manager";
 import { getCellContext, hasCellContext } from "./cell-contexts";
-import { TrafficLight, getTrafficTooltip, worstStatus, TRAFFIC_LIGHT_COLUMNS } from "@/components/shared/TrafficLight";
+import { TrafficLight, getTrafficTooltip, worstStatus, INLINE_TRAFFIC_COLUMNS, STATUS_ONLY_COLUMNS } from "@/components/shared/TrafficLight";
 import type { ShipmentRow } from "@/lib/queries/shipment-arrivals";
 import type { ColumnPreference } from "@/lib/actions/column-prefs";
 
-type SortKey = keyof ShipmentRow;
+type SortKey = string; // column key — may include computed keys like _rowNum, custStatus, inspStatus
 type SortDir = "asc" | "desc";
 
-interface ColDef { key: SortKey; header: string; align?: "right"; defaultWidth: number }
+interface ColDef {
+  key: string;
+  header: string;
+  align?: "right" | "center";
+  defaultWidth: number;
+  mergeInGroup?: boolean;  // true = visually merge in multi-line lots (default true)
+  isRowNum?: boolean;      // true = computed sequential container number
+  isStatusOnly?: boolean;  // true = renders only a traffic light dot, no text
+}
 
-// All 31 columns in default order
+// Columns that do NOT merge in multi-line lots
+const NO_MERGE_KEYS = new Set(["brand", "customer", "amount", "order", "qcInstructions"]);
+
+function col(key: string, header: string, defaultWidth: number, opts?: Partial<ColDef>): ColDef {
+  return { key: key as ColDef["key"], header, defaultWidth, mergeInGroup: !NO_MERGE_KEYS.has(key), ...opts };
+}
+
+// 34 columns in default order
 export const ALL_COLUMNS: ColDef[] = [
-  { key: "week", header: "Week", defaultWidth: 50 },
-  { key: "lot", header: "Lot", defaultWidth: 60 },
-  { key: "packingDate", header: "Packing date", defaultWidth: 85 },
-  { key: "eta", header: "ETA", defaultWidth: 90 },
-  { key: "etd", header: "ETD", defaultWidth: 90 },
-  { key: "terminal", header: "Terminal", defaultWidth: 65 },
-  { key: "vessel", header: "Vessel", defaultWidth: 200 },
-  { key: "bl", header: "BL", defaultWidth: 130 },
-  { key: "sealNumbers", header: "Seal number(s)", defaultWidth: 150 },
-  { key: "t1", header: "T1", defaultWidth: 40 },
-  { key: "weighing", header: "Weighing", defaultWidth: 65 },
-  { key: "customsReg", header: "Customs_reg", defaultWidth: 80 },
-  { key: "carrier", header: "Carrier", defaultWidth: 80 },
-  { key: "container", header: "Container", defaultWidth: 110 },
-  { key: "dateIn", header: "Date_in", defaultWidth: 60 },
-  { key: "dateOut", header: "Date_out", defaultWidth: 65 },
-  { key: "terminalStatus", header: "Terminal_status", defaultWidth: 120 },
-  { key: "scan", header: "Scan", defaultWidth: 42 },
-  { key: "transporter", header: "Transporter", defaultWidth: 85 },
-  { key: "qcInstructions", header: "QC instructions", defaultWidth: 120 },
-  { key: "warehouse", header: "Warehouse", defaultWidth: 80 },
-  { key: "shipper", header: "Shipper", defaultWidth: 80 },
-  { key: "customer", header: "Customer", defaultWidth: 80 },
-  { key: "coo", header: "CoO", defaultWidth: 42 },
-  { key: "brand", header: "Brand", defaultWidth: 110 },
-  { key: "packageType", header: "Package", defaultWidth: 80 },
-  { key: "order", header: "Order", defaultWidth: 60 },
-  { key: "amount", header: "Amount", align: "right", defaultWidth: 60 },
-  { key: "coi", header: "COI", defaultWidth: 150 },
-  { key: "productDesc", header: "Product_desc", defaultWidth: 220 },
-  { key: "mrnArn", header: "MRN/ARN", defaultWidth: 170 },
+  col("_rowNum", "#", 40, { align: "center", isRowNum: true }),
+  col("week", "Week", 50),
+  col("lot", "Lot", 60),
+  col("packingDate", "Packing date", 85),
+  col("eta", "ETA", 90),
+  col("etd", "ETD", 90),
+  col("terminal", "Terminal", 65),
+  col("vessel", "Vessel", 200),
+  col("bl", "BL", 130),
+  col("sealNumbers", "Seal number(s)", 150),
+  col("t1", "T1", 48),
+  col("weighing", "Weighing", 72),
+  col("custReg", "Cust_reg", 72),
+  col("custStatus", "Cust_status", 42, { align: "center", isStatusOnly: true }),
+  col("carrier", "Carrier", 80),
+  col("container", "Container", 110),
+  col("dateIn", "Date_in", 60),
+  col("dateOut", "Date_out", 65),
+  col("terminalStatus", "Terminal_status", 120),
+  col("inspType", "Insp_type", 80),
+  col("inspStatus", "Insp_status", 42, { align: "center", isStatusOnly: true }),
+  col("transporter", "Transporter", 85),
+  col("qcInstructions", "QC instructions", 120),
+  col("warehouse", "Warehouse", 80),
+  col("shipper", "Shipper", 80),
+  col("customer", "Customer", 80),
+  col("coo", "CoO", 42),
+  col("brand", "Brand", 110),
+  col("packageType", "Package", 80),
+  col("order", "Order", 60),
+  col("amount", "Amount", 60, { align: "right" }),
+  col("coi", "COI", 150),
+  col("productDesc", "Product_desc", 220),
+  col("mrnArn", "MRN/ARN", 170),
 ];
 
 // Map header label → ColDef for preference resolution
@@ -95,8 +113,8 @@ function buildLotGroups(rows: ShipmentRow[]): LotGroup[] {
           productDesc: `${groupRows.length} lines`,
           t1Status: worstStatus(groupRows.map((r) => r.t1Status)),
           weighingStatus: worstStatus(groupRows.map((r) => r.weighingStatus)),
-          customsRegStatus: worstStatus(groupRows.map((r) => r.customsRegStatus)),
-          scanStatus: worstStatus(groupRows.map((r) => r.scanStatus)),
+          custStatus: worstStatus(groupRows.map((r) => r.custStatus)),
+          inspStatus: worstStatus(groupRows.map((r) => r.inspStatus)),
         }
       : first;
     return { lot, rows: groupRows, mergedRow, isMultiLine };
@@ -276,8 +294,8 @@ export function ArrivalsTable({
   function resizeCol(index: number, delta: number) {
     setColWidths((prev) => { const next = [...prev]; next[index] = Math.max(30, next[index] + delta); return next; });
   }
-  const stickyLeft0 = 0;
-  const stickyLeft1 = colWidths[0];
+  // Sticky left offsets for first 3 columns (#, Week, Lot)
+  const stickyLeftOffsets = [0, colWidths[0], colWidths[0] + (colWidths[1] ?? 0)];
   const [hoveredLot, setHoveredLot] = useState<number | null>(null);
 
   function handleSort(key: SortKey) {
@@ -290,7 +308,7 @@ export function ArrivalsTable({
     const map: Record<string, string[]> = {};
     for (const col of ALL_COLUMNS) {
       const vals = new Set<string>();
-      for (const row of data) { const v = row[col.key]; vals.add(v != null ? String(v) : ""); }
+      for (const row of data) { const v = (row as unknown as Record<string, unknown>)[col.key]; vals.add(v != null ? String(v) : ""); }
       map[col.key] = Array.from(vals).sort((a, b) => a.localeCompare(b));
     }
     return map;
@@ -307,11 +325,11 @@ export function ArrivalsTable({
     for (const [key, sel] of Object.entries(columnFilters)) {
       const allVals = uniqueValues[key];
       if (!allVals || sel.size >= allVals.length) continue;
-      rows = rows.filter((row) => sel.has(row[key as SortKey] != null ? String(row[key as SortKey]) : ""));
+      rows = rows.filter((row) => { const v = (row as unknown as Record<string, unknown>)[key]; return sel.has(v != null ? String(v) : ""); });
     }
     if (search) {
       const term = search.toLowerCase();
-      rows = rows.filter((row) => ALL_COLUMNS.some((col) => { const v = row[col.key]; return v != null && String(v).toLowerCase().includes(term); }));
+      rows = rows.filter((row) => ALL_COLUMNS.some((col) => { const v = (row as unknown as Record<string, unknown>)[col.key]; return v != null && String(v).toLowerCase().includes(term); }));
     }
     return rows;
   }, [data, search, columnFilters, uniqueValues]);
@@ -322,7 +340,7 @@ export function ArrivalsTable({
     groups.sort((a, b) => {
       const rowA = isCollapsed ? a.mergedRow : a.rows[0];
       const rowB = isCollapsed ? b.mergedRow : b.rows[0];
-      const av = rowA[sortKey]; const bv = rowB[sortKey];
+      const av = (rowA as unknown as Record<string, unknown>)[sortKey]; const bv = (rowB as unknown as Record<string, unknown>)[sortKey];
       if (av == null && bv == null) return 0;
       if (av == null) return 1; if (bv == null) return -1;
       const cmp = typeof av === "number" && typeof bv === "number" ? av - bv : String(av).localeCompare(String(bv));
@@ -560,16 +578,17 @@ export function ArrivalsTable({
           <thead className="sticky top-0 z-20">
             <tr>
               {visibleColumns.map((col, i) => {
-                const isSticky = i < 2;
+                const isSticky = i < 3;
                 const filterSel = getFilterSelected(col.key);
                 const allVals = uniqueValues[col.key] ?? [];
                 const isColFiltered = filterSel.size < allVals.length;
                 return (
                   <th key={col.key}
                     className={["relative px-2 py-2.5 font-medium text-white select-none border-b border-r border-green-900/30",
-                      col.align === "right" ? "text-right" : "text-left", isSticky ? "z-30" : ""].join(" ")}
+                      col.align === "right" ? "text-right" : col.align === "center" ? "text-center" : "text-left",
+                      isSticky ? "z-30" : ""].join(" ")}
                     style={{ width: colWidths[i], minWidth: colWidths[i], maxWidth: colWidths[i],
-                      position: isSticky ? "sticky" : undefined, left: i === 0 ? stickyLeft0 : i === 1 ? stickyLeft1 : undefined,
+                      position: isSticky ? "sticky" : undefined, left: isSticky ? stickyLeftOffsets[i] : undefined,
                       backgroundColor: "#2D6A4F" }}>
                     <span className="inline-flex items-center gap-0.5 overflow-hidden">
                       <span className="cursor-pointer hover:text-white/80 transition-colors truncate" onClick={() => handleSort(col.key)}>{col.header}</span>
@@ -587,7 +606,16 @@ export function ArrivalsTable({
           </thead>
           <tbody ref={tbodyRef}>
             {(() => {
+              // Compute sequential container numbers
+              const containerNumMap = new Map<number, number>();
+              let cNum = 0;
+              for (const g of sortedGroups) {
+                cNum++;
+                containerNumMap.set(g.lot, cNum);
+              }
+
               return displayRows.map(({ displayRow, lot, isMultiLine, posInGroup, isCollapsedRow }, ri) => {
+              const containerNum = containerNumMap.get(lot) ?? 0;
               const isSelected = lot === selectedLot;
               const hidden = isCollapsedRow;
               const isHovered = !hidden && !isSelected && lot === hoveredLot;
@@ -636,24 +664,39 @@ export function ArrivalsTable({
                   aria-hidden={hidden}
                 >
                   {visibleColumns.map((col, ci) => {
-                    const val = displayRow[col.key];
-                    const isSticky = ci < 2;
+                    // rowSpan merging: skip merged columns on non-first rows of multi-line groups
+                    const shouldMerge = !isCollapsed && isMultiLine && col.mergeInGroup !== false;
+                    if (shouldMerge && posInGroup !== "first" && posInGroup !== "only") return null;
+                    const rowSpan = shouldMerge && isMultiLine && posInGroup === "first"
+                      ? displayRows.filter((r) => r.lot === lot && !r.isCollapsedRow).length
+                      : undefined;
+
+                    const isSticky = ci < 3; // #, Week, Lot are sticky
+                    const stickyLeft = ci === 0 ? 0 : ci === 1 ? colWidths[0] : ci === 2 ? colWidths[0] + colWidths[1] : 0;
                     const hasContext = hasCellContext(col.key);
                     const isCellSelected = isSelected && !hidden && selectedCellKey === col.key && selectedCellRowId === displayRow.id;
+
+                    // Determine cell value
+                    const isStatusCol = STATUS_ONLY_COLUMNS[col.key];
+                    const inlineTrafficField = INLINE_TRAFFIC_COLUMNS[col.key];
+                    const val = col.isRowNum ? containerNum : col.isStatusOnly ? null : (displayRow as unknown as Record<string, unknown>)[col.key];
+
                     return (
                       <td key={col.key}
+                        rowSpan={rowSpan}
                         onClick={(e) => !hidden && isSelected && hasContext && handleCellClick(e, displayRow.id, lot, col.key)}
                         className={[
                           "border-r border-border overflow-hidden",
                           isSticky ? "z-10" : "",
                           isCellSelected ? "ring-2 ring-inset ring-primary rounded-sm z-20" : "",
                           isSelected && !hidden && hasContext ? "cursor-pointer" : "",
+                          rowSpan ? "align-middle" : "",
                         ].join(" ")}
                         style={{
                           width: colWidths[ci], minWidth: colWidths[ci], maxWidth: colWidths[ci],
                           padding: 0,
-                          ...(isSticky && !hidden ? { position: "sticky" as const, left: ci === 0 ? stickyLeft0 : stickyLeft1, backgroundColor: rowBg } : {}),
-                          ...(isSticky && hidden ? { position: "sticky" as const, left: ci === 0 ? stickyLeft0 : stickyLeft1, backgroundColor: "transparent" } : {}),
+                          ...(isSticky && !hidden ? { position: "sticky" as const, left: stickyLeft, backgroundColor: rowBg, zIndex: 10 } : {}),
+                          ...(isSticky && hidden ? { position: "sticky" as const, left: stickyLeft, backgroundColor: "transparent" } : {}),
                         }}
                         title={isSelected && hasContext && !hidden ? `Click for ${getCellContext(col.key)?.label}` : undefined}
                       >
@@ -661,7 +704,8 @@ export function ArrivalsTable({
                           className={[
                             "overflow-hidden whitespace-nowrap text-ellipsis text-foreground transition-all duration-300 ease-in-out",
                             col.align === "right" ? "text-right tabular-nums" : "",
-                            TRAFFIC_LIGHT_COLUMNS[col.key] ? "inline-flex items-center gap-1.5" : "",
+                            col.align === "center" ? "text-center" : "",
+                            inlineTrafficField || isStatusCol ? "inline-flex items-center gap-1.5" : "",
                           ].join(" ")}
                           style={{
                             maxHeight: hidden ? 0 : "1.75rem",
@@ -669,16 +713,22 @@ export function ArrivalsTable({
                             padding: hidden ? "0 0.5rem" : "0.25rem 0.5rem",
                           }}
                         >
-                          {TRAFFIC_LIGHT_COLUMNS[col.key] && (
+                          {/* Status-only column: just a dot */}
+                          {isStatusCol && (
                             <TrafficLight
-                              status={displayRow[TRAFFIC_LIGHT_COLUMNS[col.key] as keyof ShipmentRow] as string}
-                              tooltip={getTrafficTooltip(
-                                TRAFFIC_LIGHT_COLUMNS[col.key],
-                                displayRow[TRAFFIC_LIGHT_COLUMNS[col.key] as keyof ShipmentRow] as string,
-                              )}
+                              status={(displayRow as unknown as Record<string, unknown>)[isStatusCol] as string}
+                              tooltip={getTrafficTooltip(isStatusCol, (displayRow as unknown as Record<string, unknown>)[isStatusCol] as string)}
                             />
                           )}
-                          {val != null ? String(val) : ""}
+                          {/* Inline traffic light (T1, Weighing) */}
+                          {inlineTrafficField && (
+                            <TrafficLight
+                              status={(displayRow as unknown as Record<string, unknown>)[inlineTrafficField] as string}
+                              tooltip={getTrafficTooltip(inlineTrafficField, (displayRow as unknown as Record<string, unknown>)[inlineTrafficField] as string)}
+                            />
+                          )}
+                          {/* Cell text value */}
+                          {!isStatusCol && (val != null ? String(val) : "")}
                         </div>
                       </td>
                     );

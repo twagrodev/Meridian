@@ -312,13 +312,13 @@ model ShipmentArrival {
   sealNumbers     String?                           // Seal numbers (space/slash-separated)
   t1              String?                           // Transit doc type (T1, NVT)
   weighing        String?                           // OK, FYCO, NVT
-  customsReg      String?                           // IM A, EX A, ZZC
+  custReg         String?                           // IM A, EX A, ZZC
   carrier         String?                           // MSC, MAERSK, CMA CGM, etc.
   container       String?                           // Container ID (SZLU9108112)
   dateIn          DateTime?                         // Date in — display as DD-MM
   dateOut         DateTime?                         // Date out — display as DD-MM
   terminalStatus  String?                           // Nog niet gelost, Bezig, Gelost, Binnen
-  scan            String?                           // "x" or null
+  inspType        String?                           // Scan, FYCO, Scan+FYCO, or null
   transporter     String?                           // GROOT, ZZC
   qcInstructions  String?                           // Free text QC notes
   warehouse       String?                           // GROOT, EFP, ZZC
@@ -334,8 +334,8 @@ model ShipmentArrival {
   mrnArn          String?                           // MRN or ARN reference
   t1Status        String    @default("red")       // Traffic light: green/yellow/red
   weighingStatus  String    @default("red")       // Traffic light: green/yellow/red
-  customsRegStatus String   @default("red")       // Traffic light: green/yellow/red
-  scanStatus      String    @default("red")       // Traffic light: green/yellow/red
+  custStatus      String    @default("red")       // Traffic light: green/yellow/red
+  inspStatus      String    @default("red")       // Traffic light: green/yellow/red
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
