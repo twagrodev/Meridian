@@ -615,10 +615,12 @@ export function ArrivalsTable({
               }
 
               return displayRows.map(({ displayRow, lot, isMultiLine, posInGroup, isCollapsedRow }, ri) => {
+              // Don't render collapsed rows at all — prevents extra row height
+              if (isCollapsedRow) return null;
+
               const containerNum = containerNumMap.get(lot) ?? 0;
               const isSelected = lot === selectedLot;
-              const hidden = isCollapsedRow;
-              const isHovered = !hidden && !isSelected && lot === hoveredLot;
+              const isHovered = !isSelected && lot === hoveredLot;
 
               const rowBg = isSelected
                 ? "#d0e8d8"
@@ -639,29 +641,28 @@ export function ArrivalsTable({
               return (
                 <tr
                   key={displayRow.id}
-                  onClick={() => !hidden && toggleSelectLot(lot)}
-                  onMouseEnter={() => !hidden && setHoveredLot(lot)}
+                  onClick={() => toggleSelectLot(lot)}
+                  onMouseEnter={() => setHoveredLot(lot)}
                   onMouseLeave={() => setHoveredLot((prev) => (prev === lot ? null : prev))}
                   className={[
                     "cursor-pointer",
                     // Selection borders
-                    isFirstOfSel && !hidden ? "border-t-2 border-t-primary" : "",
-                    isLastOfSel && !hidden ? "border-b-2 border-b-primary" : "",
-                    isMidOfSel && !hidden ? "border-t border-border/30" : "",
+                    isFirstOfSel ? "border-t-2 border-t-primary" : "",
+                    isLastOfSel ? "border-b-2 border-b-primary" : "",
+                    isMidOfSel ? "border-t border-border/30" : "",
                     // Non-selected group borders
-                    !isSelected && !hidden && thickTop ? "border-t-2 border-t-foreground/25" : "",
-                    !isSelected && !hidden && thickBottom ? "border-b-2 border-b-foreground/25" : "",
-                    !isSelected && !hidden && !thickBottom ? "border-b border-border" : "",
-                    !isSelected && !hidden && thinInternal && !thickTop ? "border-t border-border/30" : "",
+                    !isSelected && thickTop ? "border-t-2 border-t-foreground/25" : "",
+                    !isSelected && thickBottom ? "border-b-2 border-b-foreground/25" : "",
+                    !isSelected && !thickBottom ? "border-b border-border" : "",
+                    !isSelected && thinInternal && !thickTop ? "border-t border-border/30" : "",
                   ].join(" ")}
                   style={{
-                    backgroundColor: hidden ? "transparent" : rowBg,
-                    ...(isSelected && !hidden ? {
+                    backgroundColor: rowBg,
+                    ...(isSelected ? {
                       boxShadow: "inset 2px 0 0 hsl(var(--primary)), inset -2px 0 0 hsl(var(--primary))",
                     } : {}),
                   }}
-                  aria-selected={isSelected && !hidden}
-                  aria-hidden={hidden}
+                  aria-selected={isSelected}
                 >
                   {visibleColumns.map((col, ci) => {
                     // rowSpan merging: skip merged columns on non-first rows of multi-line groups
@@ -674,7 +675,7 @@ export function ArrivalsTable({
                     const isSticky = ci < 3; // #, Week, Lot are sticky
                     const stickyLeft = ci === 0 ? 0 : ci === 1 ? colWidths[0] : ci === 2 ? colWidths[0] + colWidths[1] : 0;
                     const hasContext = hasCellContext(col.key);
-                    const isCellSelected = isSelected && !hidden && selectedCellKey === col.key && selectedCellRowId === displayRow.id;
+                    const isCellSelected = isSelected && selectedCellKey === col.key && selectedCellRowId === displayRow.id;
 
                     // Determine cell value
                     const isStatusCol = STATUS_ONLY_COLUMNS[col.key];
@@ -684,21 +685,20 @@ export function ArrivalsTable({
                     return (
                       <td key={col.key}
                         rowSpan={rowSpan}
-                        onClick={(e) => !hidden && isSelected && hasContext && handleCellClick(e, displayRow.id, lot, col.key)}
+                        onClick={(e) => isSelected && hasContext && handleCellClick(e, displayRow.id, lot, col.key)}
                         className={[
                           "border-r border-border overflow-hidden",
                           isSticky ? "z-10" : "",
                           isCellSelected ? "ring-2 ring-inset ring-primary rounded-sm z-20" : "",
-                          isSelected && !hidden && hasContext ? "cursor-pointer" : "",
+                          isSelected && hasContext ? "cursor-pointer" : "",
                           rowSpan ? "align-middle" : "",
                         ].join(" ")}
                         style={{
                           width: colWidths[ci], minWidth: colWidths[ci], maxWidth: colWidths[ci],
                           padding: 0,
-                          ...(isSticky && !hidden ? { position: "sticky" as const, left: stickyLeft, backgroundColor: rowBg, zIndex: 10 } : {}),
-                          ...(isSticky && hidden ? { position: "sticky" as const, left: stickyLeft, backgroundColor: "transparent" } : {}),
+                          ...(isSticky ? { position: "sticky" as const, left: stickyLeft, backgroundColor: rowBg, zIndex: 10 } : {}),
                         }}
-                        title={isSelected && hasContext && !hidden ? `Click for ${getCellContext(col.key)?.label}` : undefined}
+                        title={isSelected && hasContext ? `Click for ${getCellContext(col.key)?.label}` : undefined}
                       >
                         <div
                           className={[
@@ -708,9 +708,8 @@ export function ArrivalsTable({
                             inlineTrafficField || isStatusCol ? "inline-flex items-center gap-1.5" : "",
                           ].join(" ")}
                           style={{
-                            maxHeight: hidden ? 0 : "1.75rem",
-                            opacity: hidden ? 0 : 1,
-                            padding: hidden ? "0 0.5rem" : "0.25rem 0.5rem",
+                            maxHeight: "1.75rem",
+                            padding: "0.25rem 0.5rem",
                           }}
                         >
                           {/* Status-only column: just a dot */}
