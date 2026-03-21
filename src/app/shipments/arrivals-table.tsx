@@ -264,71 +264,73 @@ function InlineDateCell({
   const [saving, setSaving] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Sync local display value when parent data changes
   useEffect(() => { setLocalValue(value); }, [value]);
-
-  // Convert DD-MM display to YYYY-MM-DD for the input
-  function toInputFormat(ddmm: string | null): string {
-    if (!ddmm) return "";
-    const [d, m] = ddmm.split("-");
-    return `2026-${m}-${d}`;
-  }
-
-  // Convert YYYY-MM-DD input back to DD-MM display
-  function toDisplayFormat(iso: string): string {
-    const [, m, d] = iso.split("-");
-    return `${d}-${m}`;
-  }
 
   function startEdit(e: React.MouseEvent) {
     e.stopPropagation();
     setEditing(true);
     setTimeout(() => {
       if (inputRef.current) {
-        inputRef.current.value = toInputFormat(localValue);
-        inputRef.current.showPicker?.();
+        inputRef.current.select();
       }
     }, 0);
   }
 
-  async function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const newIso = e.target.value; // YYYY-MM-DD or ""
+  async function save(newVal: string) {
+    const trimmed = newVal.trim();
     setEditing(false);
 
-    if (!newIso && !localValue) return; // no change
-    if (newIso && localValue && toInputFormat(localValue) === newIso) return; // same value
+    // Validate DD-MM format
+    if (trimmed && !/^\d{2}-\d{2}$/.test(trimmed)) {
+      toast.error("Use DD-MM format (e.g. 23-03)");
+      return;
+    }
 
-    const newDisplay = newIso ? toDisplayFormat(newIso) : null;
-    setLocalValue(newDisplay); // optimistic update
+    if (trimmed === (localValue ?? "")) return; // no change
+
+    setLocalValue(trimmed || null);
     setSaving(true);
 
+    // Convert DD-MM to ISO date for storage
+    const isoDate = trimmed ? `2026-${trimmed.split("-")[1]}-${trimmed.split("-")[0]}` : null;
+
     const { updateShipmentArrival } = await import("@/lib/actions/shipment-arrival-actions");
-    const result = await updateShipmentArrival(rowId, { [field]: newIso || null });
+    const result = await updateShipmentArrival(rowId, { [field]: isoDate });
 
     setSaving(false);
     if (result.error) {
-      setLocalValue(value); // revert on error
+      setLocalValue(value);
       toast.error(result.error);
     } else {
       router.refresh();
     }
   }
 
-  function handleKeyDown(e: React.KeyboardEvent) {
+  function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
     e.stopPropagation();
-    if (e.key === "Escape") setEditing(false);
+    if (e.key === "Enter") {
+      save(e.currentTarget.value);
+    }
+    if (e.key === "Escape") {
+      setEditing(false);
+    }
+  }
+
+  function handleBlur(e: React.FocusEvent<HTMLInputElement>) {
+    save(e.currentTarget.value);
   }
 
   if (editing) {
     return (
       <input
         ref={inputRef}
-        type="date"
-        defaultValue={toInputFormat(localValue)}
-        onChange={handleChange}
-        onBlur={() => setEditing(false)}
+        type="text"
+        defaultValue={localValue ?? ""}
+        placeholder="DD-MM"
+        onBlur={handleBlur}
         onKeyDown={handleKeyDown}
-        className="w-full bg-transparent text-foreground text-xs border-none outline-none p-0"
+        className="w-full bg-white text-foreground text-xs border border-primary rounded px-1 py-0 outline-none"
+        style={{ color: "black" }}
         autoFocus
       />
     );
@@ -338,11 +340,13 @@ function InlineDateCell({
     <span
       onClick={startEdit}
       className={[
-        "block w-full min-h-[1.25rem] cursor-pointer hover:underline hover:text-primary text-foreground transition-colors",
+        "block w-full min-h-[1.25rem] cursor-pointer hover:underline transition-colors",
         saving ? "opacity-50" : "",
         !localValue ? "hover:bg-primary/5 rounded" : "",
         localValue && warn ? "bg-orange-100 text-orange-800 rounded px-1" : "",
+        localValue && !warn ? "" : "",
       ].join(" ")}
+      style={{ color: "black" }}
       title={warn ? "Container pickup may be difficult — Date_in is on or before ETD" : "Click to edit"}
     >
       {localValue ?? "\u00A0"}
@@ -491,6 +495,9 @@ export function ArrivalsTable({
     return rows;
   }, [data, search, columnFilters, uniqueValues]);
 
+  // Day-of-week sort order (Mon=0 ... Sun=6)
+  const DAY_SORT_ORDER: Record<string, number> = { Mon: 0, Tue: 1, Wed: 2, Thu: 3, Fri: 4, Sat: 5, Sun: 6 };
+
   // Lot-aware sorting: sort groups by the first row's sort value, keep rows within a group together
   const sortedGroups = useMemo(() => {
     const groups = buildLotGroups(filtered);
@@ -500,7 +507,14 @@ export function ArrivalsTable({
       const av = (rowA as unknown as Record<string, unknown>)[sortKey]; const bv = (rowB as unknown as Record<string, unknown>)[sortKey];
       if (av == null && bv == null) return 0;
       if (av == null) return 1; if (bv == null) return -1;
-      const cmp = typeof av === "number" && typeof bv === "number" ? av - bv : String(av).localeCompare(String(bv));
+      let cmp: number;
+      if (sortKey === "dateInDay") {
+        cmp = (DAY_SORT_ORDER[String(av)] ?? 7) - (DAY_SORT_ORDER[String(bv)] ?? 7);
+      } else if (typeof av === "number" && typeof bv === "number") {
+        cmp = av - bv;
+      } else {
+        cmp = String(av).localeCompare(String(bv));
+      }
       return sortDir === "asc" ? cmp : -cmp;
     });
     return groups;
