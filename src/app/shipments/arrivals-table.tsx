@@ -955,6 +955,7 @@ export function ArrivalsTable({
                           style={{
                             maxHeight: "1.75rem",
                             padding: "0.25rem 0.5rem",
+                            ...(col.key === "dateIn" || col.key === "dateOut" ? { color: "black" } : {}),
                           }}
                         >
                           {/* Status-only column: just a dot */}
