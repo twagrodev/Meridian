@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import {
   Search, ArrowUp, ArrowDown, Filter, X, Check,
   FolderOpen, FileCheck, ExternalLink, Truck, Route, Pencil,
-  ChevronsUpDown,
+  ChevronsUpDown, Clock, Package, Ship, Anchor, Box, PanelTopClose, PanelTop,
 } from "lucide-react";
 import { toast } from "sonner";
 import { EditShipmentSheet } from "./edit-sheet";
@@ -30,6 +30,17 @@ interface ColDef {
   isStatusOnly?: boolean;  // true = renders only a traffic light dot, no text
 }
 
+// Day-of-week colors for the Day column
+const DAY_COLORS: Record<string, string> = {
+  Mon: "bg-blue-100 text-blue-800",
+  Tue: "bg-purple-100 text-purple-800",
+  Wed: "bg-amber-100 text-amber-800",
+  Thu: "bg-emerald-100 text-emerald-800",
+  Fri: "bg-rose-100 text-rose-800",
+  Sat: "bg-slate-100 text-slate-600",
+  Sun: "bg-red-100 text-red-700",
+};
+
 // Columns that do NOT merge in multi-line lots
 const NO_MERGE_KEYS = new Set(["brand", "customer", "amount", "order", "qcInstructions"]);
 
@@ -40,6 +51,7 @@ function col(key: string, header: string, defaultWidth: number, opts?: Partial<C
 // 34 columns in default order
 export const ALL_COLUMNS: ColDef[] = [
   col("_rowNum", "#", 40, { align: "center", isRowNum: true }),
+  col("dateInDay", "Day", 48, { align: "center" }),
   col("week", "Week", 50),
   col("lot", "Lot", 60),
   col("packingDate", "Packing date", 85),
@@ -218,17 +230,95 @@ function ResizeHandle({ onResize }: { onResize: (delta: number) => void }) {
   );
 }
 
+// ── Inline Date Editor ───────────────────────────────────────
+
+function InlineDateCell({
+  value,
+  rowId,
+  field,
+}: {
+  value: string | null;
+  rowId: string;
+  field: "dateIn" | "dateOut";
+}) {
+  const router = useRouter();
+  const [editing, setEditing] = useState(false);
+  const [inputVal, setInputVal] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  function startEdit(e: React.MouseEvent) {
+    e.stopPropagation();
+    // Convert DD-MM display to YYYY-MM-DD for the date input (assume current year)
+    if (value) {
+      const [d, m] = value.split("-");
+      setInputVal(`2026-${m}-${d}`);
+    } else {
+      setInputVal("");
+    }
+    setEditing(true);
+    setTimeout(() => inputRef.current?.focus(), 0);
+  }
+
+  async function save() {
+    setEditing(false);
+    const { updateShipmentArrival } = await import("@/lib/actions/shipment-arrival-actions");
+    await updateShipmentArrival(rowId, { [field]: inputVal || null });
+    router.refresh();
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent) {
+    e.stopPropagation();
+    if (e.key === "Enter") save();
+    if (e.key === "Escape") setEditing(false);
+  }
+
+  if (editing) {
+    return (
+      <input
+        ref={inputRef}
+        type="date"
+        value={inputVal}
+        onChange={(e) => setInputVal(e.target.value)}
+        onBlur={save}
+        onKeyDown={handleKeyDown}
+        className="w-full bg-transparent text-foreground text-xs border-none outline-none p-0"
+      />
+    );
+  }
+
+  return (
+    <span
+      onClick={startEdit}
+      className="cursor-pointer hover:underline hover:text-primary transition-colors"
+      title="Click to edit"
+    >
+      {value ?? ""}
+    </span>
+  );
+}
+
 // ── Main Table ───────────────────────────────────────────────
+
+export interface KpiData {
+  lots: number;
+  lineItems: number;
+  containers: number;
+  boxes: number;
+  vessels: number;
+}
 
 export function ArrivalsTable({
   data,
   initialColumnPrefs,
+  kpis,
 }: {
   data: ShipmentRow[];
   initialColumnPrefs: ColumnPreference[] | null;
+  kpis: KpiData;
 }) {
   const router = useRouter();
   const [search, setSearch] = useState("");
+  const [showKpis, setShowKpis] = useState(true);
   const [sortKey, setSortKey] = useState<SortKey>("lot");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
   const [columnFilters, setColumnFilters] = useState<Record<string, Set<string>>>({});
@@ -237,6 +327,7 @@ export function ArrivalsTable({
   const [selectedCellRowId, setSelectedCellRowId] = useState<string | null>(null);
   const [editOpen, setEditOpen] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const [showTime, setShowTime] = useState(true);
   const [columnPrefs, setColumnPrefs] = useState<ColumnPreference[]>(
     () => initialColumnPrefs ?? buildDefaultPrefs()
   );
@@ -295,7 +386,13 @@ export function ArrivalsTable({
     setColWidths((prev) => { const next = [...prev]; next[index] = Math.max(30, next[index] + delta); return next; });
   }
   // Sticky left offsets for first 3 columns (#, Week, Lot)
-  const stickyLeftOffsets = [0, colWidths[0], colWidths[0] + (colWidths[1] ?? 0)];
+  // Sticky left offsets for first 4 columns (#, Day, Week, Lot)
+  const stickyLeftOffsets = [
+    0,
+    colWidths[0],
+    colWidths[0] + (colWidths[1] ?? 0),
+    colWidths[0] + (colWidths[1] ?? 0) + (colWidths[2] ?? 0),
+  ];
   const [hoveredLot, setHoveredLot] = useState<number | null>(null);
 
   function handleSort(key: SortKey) {
@@ -480,8 +577,39 @@ export function ArrivalsTable({
 
   return (
     <div onKeyDown={handleKeyDown} tabIndex={0} className="outline-none">
+      {/* KPI cards — collapsible */}
+      {showKpis && (
+        <div className="mb-3 grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <div className="rounded-lg border bg-card p-3 flex items-center gap-3">
+            <Package className="h-5 w-5 text-muted-foreground shrink-0" />
+            <div><p className="text-lg font-bold">{kpis.lots}</p><p className="text-xs text-muted-foreground">{kpis.lineItems} line items</p></div>
+          </div>
+          <div className="rounded-lg border bg-card p-3 flex items-center gap-3">
+            <Box className="h-5 w-5 text-muted-foreground shrink-0" />
+            <div><p className="text-lg font-bold">{kpis.containers}</p><p className="text-xs text-muted-foreground">Containers</p></div>
+          </div>
+          <div className="rounded-lg border bg-card p-3 flex items-center gap-3">
+            <Anchor className="h-5 w-5 text-muted-foreground shrink-0" />
+            <div><p className="text-lg font-bold">{kpis.boxes.toLocaleString()}</p><p className="text-xs text-muted-foreground">Total boxes</p></div>
+          </div>
+          <div className="rounded-lg border bg-card p-3 flex items-center gap-3">
+            <Ship className="h-5 w-5 text-muted-foreground shrink-0" />
+            <div><p className="text-lg font-bold">{kpis.vessels}</p><p className="text-xs text-muted-foreground">Vessels</p></div>
+          </div>
+        </div>
+      )}
+
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
+          {/* KPI toggle */}
+          <button
+            type="button"
+            className="inline-flex items-center gap-1.5 rounded-md px-2 h-8 text-xs font-medium border border-input bg-transparent hover:bg-accent text-foreground transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+            onClick={() => setShowKpis((v) => !v)}
+            title={showKpis ? "Hide statistics panels" : "Show statistics panels"}
+          >
+            {showKpis ? <PanelTopClose className="h-3.5 w-3.5" /> : <PanelTop className="h-3.5 w-3.5" />}
+          </button>
           {/* Compact toggle */}
           <button
             type="button"
@@ -500,6 +628,22 @@ export function ArrivalsTable({
           </button>
 
           <ColumnManagerButton prefs={columnPrefs} onChange={setColumnPrefs} />
+
+          <button
+            type="button"
+            className={[
+              "inline-flex items-center gap-1.5 rounded-md px-3 h-8 text-xs font-medium transition-colors",
+              "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
+              showTime
+                ? "bg-emerald-100 text-emerald-800 hover:bg-emerald-200 border border-emerald-300"
+                : "border border-input bg-transparent hover:bg-accent text-foreground",
+            ].join(" ")}
+            onClick={() => setShowTime((v) => !v)}
+            title={showTime ? "Hide time from ETA/ETD" : "Show time on ETA/ETD"}
+          >
+            <Clock className="h-3.5 w-3.5" />
+            {showTime ? "HH:MM" : "DD-MM"}
+          </button>
 
           <div className="relative w-72">
             <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
@@ -578,7 +722,7 @@ export function ArrivalsTable({
           <thead className="sticky top-0 z-20">
             <tr>
               {visibleColumns.map((col, i) => {
-                const isSticky = i < 3;
+                const isSticky = i < 4;
                 const filterSel = getFilterSelected(col.key);
                 const allVals = uniqueValues[col.key] ?? [];
                 const isColFiltered = filterSel.size < allVals.length;
@@ -672,7 +816,7 @@ export function ArrivalsTable({
                       ? displayRows.filter((r) => r.lot === lot && !r.isCollapsedRow).length
                       : undefined;
 
-                    const isSticky = ci < 3; // #, Week, Lot are sticky
+                    const isSticky = ci < 4; // #, Day, Week, Lot are sticky
                     const stickyLeft = ci === 0 ? 0 : ci === 1 ? colWidths[0] : ci === 2 ? colWidths[0] + colWidths[1] : 0;
                     const hasContext = hasCellContext(col.key);
                     const isCellSelected = isSelected && selectedCellKey === col.key && selectedCellRowId === displayRow.id;
@@ -680,7 +824,11 @@ export function ArrivalsTable({
                     // Determine cell value
                     const isStatusCol = STATUS_ONLY_COLUMNS[col.key];
                     const inlineTrafficField = INLINE_TRAFFIC_COLUMNS[col.key];
-                    const val = col.isRowNum ? containerNum : col.isStatusOnly ? null : (displayRow as unknown as Record<string, unknown>)[col.key];
+                    let val = col.isRowNum ? containerNum : col.isStatusOnly ? null : (displayRow as unknown as Record<string, unknown>)[col.key];
+                    // Strip time from ETA/ETD when showTime is off
+                    if (!showTime && (col.key === "eta" || col.key === "etd") && typeof val === "string" && val.length > 5) {
+                      val = val.slice(0, 5);
+                    }
 
                     return (
                       <td key={col.key}
@@ -727,7 +875,16 @@ export function ArrivalsTable({
                             />
                           )}
                           {/* Cell text value */}
-                          {!isStatusCol && (val != null ? String(val) : "")}
+                          {col.isRowNum && val != null && (
+                            <span className="inline-flex items-center justify-center h-5 w-5 rounded-full bg-emerald-600 text-white text-[10px] font-bold leading-none">{String(val)}</span>
+                          )}
+                          {col.key === "dateInDay" && val != null && (
+                            <span className={`inline-flex items-center justify-center rounded px-1.5 py-0.5 text-[10px] font-semibold leading-none ${DAY_COLORS[String(val)] ?? "bg-gray-100 text-gray-700"}`}>{String(val)}</span>
+                          )}
+                          {(col.key === "dateIn" || col.key === "dateOut") && (
+                            <InlineDateCell value={val as string | null} rowId={displayRow.id} field={col.key as "dateIn" | "dateOut"} />
+                          )}
+                          {!col.isRowNum && col.key !== "dateInDay" && col.key !== "dateIn" && col.key !== "dateOut" && !isStatusCol && (val != null ? String(val) : "")}
                         </div>
                       </td>
                     );

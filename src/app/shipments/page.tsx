@@ -1,5 +1,3 @@
-import { Package, Ship, Anchor, Box } from "lucide-react";
-import { KpiCard } from "@/components/shared/KpiCard";
 import { getShipmentArrivals, getAvailableWeeks } from "@/lib/queries/shipment-arrivals";
 import { getColumnPreferences } from "@/lib/actions/column-prefs";
 import { ArrivalsTable } from "./arrivals-table";
@@ -40,34 +38,11 @@ export default async function ShipmentsPage({
         <WeekFilter weeks={weeks} current={weekParam ?? null} />
       </div>
 
-      <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <KpiCard
-          title="Lots"
-          value={uniqueLots}
-          subtitle={`${rows.length} line items`}
-          icon={<Package className="h-5 w-5" />}
-        />
-        <KpiCard
-          title="Containers"
-          value={uniqueContainers}
-          subtitle="Unique containers"
-          icon={<Box className="h-5 w-5" />}
-        />
-        <KpiCard
-          title="Boxes"
-          value={totalAmount.toLocaleString()}
-          subtitle="Total box count"
-          icon={<Anchor className="h-5 w-5" />}
-        />
-        <KpiCard
-          title="Vessels"
-          value={uniqueVessels}
-          subtitle="Distinct vessels"
-          icon={<Ship className="h-5 w-5" />}
-        />
-      </div>
-
-      <ArrivalsTable data={rows} initialColumnPrefs={columnPrefs} />
+      <ArrivalsTable
+        data={rows}
+        initialColumnPrefs={columnPrefs}
+        kpis={{ lots: uniqueLots, lineItems: rows.length, containers: uniqueContainers, boxes: totalAmount, vessels: uniqueVessels }}
+      />
     </div>
   );
 }
