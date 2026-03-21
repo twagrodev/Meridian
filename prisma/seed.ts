@@ -200,6 +200,134 @@ async function main() {
     prisma.warehouse.create({ data: { name: "Rotterdam Port Facility", code: "WH-RTM", location: "Rotterdam, NL", capacity: 12000 } }),
   ]);
 
+  // ─── Customs Declarations ───────────────────────────────────────────
+  const customsStatuses = ["PENDING", "SUBMITTED", "UNDER_REVIEW", "CLEARED", "RELEASED", "REJECTED"];
+  const declarations = [];
+  for (let i = 0; i < 15; i++) {
+    const status = customsStatuses[i % customsStatuses.length];
+    const submitted = new Date(2026, 2, 5 + i);
+    const decl = await prisma.customsDeclaration.create({
+      data: {
+        declarationNumber: `NL-CUS-2026-${String(i + 1).padStart(4, "0")}`,
+        status,
+        submittedAt: status !== "PENDING" ? submitted : null,
+        clearedAt: ["CLEARED", "RELEASED"].includes(status) ? new Date(submitted.getTime() + 3 * 24 * 60 * 60 * 1000) : null,
+        releasedAt: status === "RELEASED" ? new Date(submitted.getTime() + 5 * 24 * 60 * 60 * 1000) : null,
+        notes: i % 4 === 0 ? "Phytosanitary certificate required" : null,
+        shipmentId: shipments[i % shipments.length].id,
+      },
+    });
+    declarations.push(decl);
+  }
+
+  // ─── Quality Inspections ──────────────────────────────────────────
+  const grades = ["PREMIUM", "GRADE_A", "GRADE_A", "GRADE_B", "PREMIUM", "REJECTED"];
+  const crownColors = ["Green", "Yellow-Green", "Yellow", "Brown-Green", "Green"];
+  const inspections = [];
+  for (let i = 0; i < 18; i++) {
+    const grade = grades[i % grades.length];
+    const inspection = await prisma.qualityInspection.create({
+      data: {
+        grade,
+        score: grade === "PREMIUM" ? 90 + Math.floor(Math.random() * 10) : grade === "GRADE_A" ? 75 + Math.floor(Math.random() * 15) : grade === "GRADE_B" ? 60 + Math.floor(Math.random() * 15) : 30 + Math.floor(Math.random() * 20),
+        moisture: 12 + Math.random() * 4,
+        pulpTemp: 13 + Math.random() * 3,
+        crownColor: crownColors[i % crownColors.length],
+        defects: i % 5 === 0 ? JSON.stringify(["minor bruising", "slight discoloration"]) : null,
+        notes: i % 3 === 0 ? "Standard inspection completed" : null,
+        containerId: containers[i % containers.length].id,
+        inspectorId: logisticsUser.id,
+      },
+    });
+    inspections.push(inspection);
+  }
+
+  // ─── Dispatch Plans ───────────────────────────────────────────────
+  const dispatchStatuses = ["PLANNED", "CONFIRMED", "IN_PROGRESS", "COMPLETED", "CANCELLED"];
+  const dispatchDestinations = ["AgroFair Barendrecht", "Albert Heijn DC Zaandam", "Jumbo DC Veghel", "Lidl DC Heerenveen", "PLUS DC Haaksbergen"];
+  const plans = [];
+  for (let i = 0; i < 12; i++) {
+    const plan = await prisma.dispatchPlan.create({
+      data: {
+        scheduledDate: new Date(2026, 2, 15 + i),
+        status: dispatchStatuses[i % dispatchStatuses.length],
+        destination: dispatchDestinations[i % dispatchDestinations.length],
+        notes: i % 3 === 0 ? "Temperature controlled transport required" : null,
+        shipmentId: shipments[i % shipments.length].id,
+      },
+    });
+    plans.push(plan);
+  }
+
+  // ─── Transport Legs ───────────────────────────────────────────────
+  const modes = ["SEA", "ROAD", "ROAD", "RAIL"];
+  const legStatuses = ["PLANNED", "IN_PROGRESS", "COMPLETED", "COMPLETED"];
+  for (let i = 0; i < plans.length; i++) {
+    await prisma.transportLeg.create({
+      data: {
+        mode: "SEA",
+        carrier: ["MSC", "CMA CGM", "Maersk", "Seatrade"][i % 4],
+        origin: origins[i % origins.length],
+        destination: "Rotterdam, Netherlands",
+        departureTime: new Date(2026, 2, 1 + i),
+        arrivalTime: new Date(2026, 2, 15 + i),
+        status: legStatuses[i % legStatuses.length],
+        trackingRef: `TRK-SEA-${String(i + 1).padStart(4, "0")}`,
+        dispatchPlanId: plans[i].id,
+      },
+    });
+    await prisma.transportLeg.create({
+      data: {
+        mode: modes[i % modes.length] === "SEA" ? "ROAD" : modes[i % modes.length],
+        carrier: ["Van den Bosch", "Kuehne Nagel", "DHL Freight", "DB Schenker"][i % 4],
+        origin: "Rotterdam, Netherlands",
+        destination: dispatchDestinations[i % dispatchDestinations.length],
+        departureTime: new Date(2026, 2, 16 + i),
+        arrivalTime: new Date(2026, 2, 16 + i, 14 + (i % 6)),
+        status: i < 6 ? "COMPLETED" : "PLANNED",
+        trackingRef: `TRK-RD-${String(i + 1).padStart(4, "0")}`,
+        dispatchPlanId: plans[i].id,
+      },
+    });
+  }
+
+  // ─── Documents ────────────────────────────────────────────────────
+  const docTypes = ["BL", "AN", "INV", "FT_INV", "PL", "WC", "COI", "EUR1"];
+  const docStatuses = ["UPLOADED", "CLASSIFIED", "MATCHED", "MATCHED", "CLASSIFIED", "PROCESSING", "FAILED", "MANUAL"];
+  for (let i = 0; i < 20; i++) {
+    const docType = docTypes[i % docTypes.length];
+    await prisma.document.create({
+      data: {
+        fileName: `${docType.toLowerCase()}_${String(i + 1).padStart(3, "0")}.pdf`,
+        originalName: `${docType.toLowerCase()}_shipment_${(i % shipments.length) + 1}.pdf`,
+        mimeType: "application/pdf",
+        fileSize: 50000 + Math.floor(Math.random() * 500000),
+        docType,
+        docStatus: docStatuses[i % docStatuses.length],
+        confidence: docStatuses[i % docStatuses.length] === "MATCHED" ? 0.85 + Math.random() * 0.15 : docStatuses[i % docStatuses.length] === "CLASSIFIED" ? 0.6 + Math.random() * 0.25 : null,
+        extractedFields: ["MATCHED", "CLASSIFIED"].includes(docStatuses[i % docStatuses.length]) ? JSON.stringify({ bl_number: `BL${2026000 + i}`, vessel: vessels[i % vessels.length].name }) : null,
+        shipmentId: shipments[i % shipments.length].id,
+        containerId: containers[i % containers.length].id,
+        uploadedById: docUser.id,
+      },
+    });
+  }
+
+  // ─── Scan Events ──────────────────────────────────────────────────
+  const warehouses = await prisma.warehouse.findMany();
+  for (let i = 0; i < 30; i++) {
+    const container = containers[i % containers.length];
+    await prisma.scanEvent.create({
+      data: {
+        scanType: i % 5 === 0 ? "QR" : "BARCODE",
+        scannedCode: container.containerCode,
+        result: JSON.stringify({ matched: true, containerCode: container.containerCode }),
+        containerId: container.id,
+        warehouseId: warehouses[i % warehouses.length].id,
+      },
+    });
+  }
+
   // ─── Sample Audit Logs ──────────────────────────────────────────────
   for (let i = 0; i < 10; i++) {
     await prisma.auditLog.create({
@@ -214,7 +342,7 @@ async function main() {
     });
   }
 
-  console.log(`Seeded: ${users.length} users, ${producers.length} producers, ${vessels.length} vessels, ${containers.length} containers, ${shipments.length} shipments`);
+  console.log(`Seeded: ${users.length} users, ${producers.length} producers, ${vessels.length} vessels, ${containers.length} containers, ${shipments.length} shipments, ${declarations.length} customs declarations, ${inspections.length} inspections, ${plans.length} dispatch plans, 20 documents, 30 scan events`);
 }
 
 main()

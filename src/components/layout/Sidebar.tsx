@@ -1,8 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
+import { useSession } from "next-auth/react";
 import {
+  LayoutDashboard,
   Ship,
   Truck,
   FileCheck,
@@ -12,23 +14,32 @@ import {
   Package,
   MapPin,
   ScanBarcode,
+  ShieldCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const navItems = [
+  { label: "Dashboard", href: "/", icon: LayoutDashboard, theme: "default" },
   { label: "Shipments", href: "/shipments", icon: Package, theme: "shipments" },
   { label: "Vessels", href: "/vessels", icon: Ship, theme: "default" },
-  { label: "Dispatch", href: "/dispatch", icon: Truck, theme: "default" },
-  { label: "Customs", href: "/customs", icon: FileCheck, theme: "customs" },
-  { label: "Integrations", href: "/integrations", icon: Plug, theme: "default" },
   { label: "Documents", href: "/documents", icon: FileText, theme: "default" },
   { label: "Quality", href: "/quality", icon: ClipboardCheck, theme: "quality" },
+  { label: "Customs", href: "/customs", icon: FileCheck, theme: "customs" },
+  { label: "Dispatch", href: "/dispatch", icon: Truck, theme: "default" },
   { label: "Transport", href: "/transport", icon: MapPin, theme: "transport" },
   { label: "Scanner", href: "/scanner", icon: ScanBarcode, theme: "quality" },
+  { label: "Integrations", href: "/integrations", icon: Plug, theme: "default" },
 ];
 
 export function Sidebar() {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const { data: session } = useSession();
+
+  const weekParam = searchParams.get("week");
+  const yearParam = searchParams.get("year");
+  const weekQuery = weekParam && yearParam ? `?week=${weekParam}&year=${yearParam}` : "";
+  const isAdmin = session?.user?.role === "OPS_MANAGER";
 
   return (
     <aside className="flex h-full w-60 flex-col border-r bg-card" role="navigation" aria-label="Main navigation">
@@ -42,12 +53,12 @@ export function Sidebar() {
       </div>
       <nav className="flex-1 space-y-1 p-3">
         {navItems.map((item) => {
-          const isActive = pathname.startsWith(item.href);
+          const isActive = item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
           const Icon = item.icon;
           return (
             <Link
               key={item.href}
-              href={item.href}
+              href={item.href + weekQuery}
               className={cn(
                 "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
                 "hover:bg-accent hover:text-accent-foreground",
@@ -61,6 +72,24 @@ export function Sidebar() {
             </Link>
           );
         })}
+        {isAdmin && (
+          <>
+            <div className="my-2 border-t" />
+            <Link
+              href="/admin"
+              className={cn(
+                "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+                "hover:bg-accent hover:text-accent-foreground",
+                "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
+                pathname.startsWith("/admin") && "bg-accent text-accent-foreground font-semibold"
+              )}
+              aria-current={pathname.startsWith("/admin") ? "page" : undefined}
+            >
+              <ShieldCheck className="h-4 w-4 shrink-0" aria-hidden="true" />
+              Admin
+            </Link>
+          </>
+        )}
       </nav>
     </aside>
   );

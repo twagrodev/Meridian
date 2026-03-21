@@ -12,9 +12,9 @@ if not exist "node_modules" (
 )
 
 :: Check if database exists
-if not exist "prisma\dev.db" (
+if not exist "dev.db" (
     echo Setting up database...
-    npx prisma migrate dev --name init
+    npx prisma db push
     npx tsx prisma/seed.ts
     echo.
 )

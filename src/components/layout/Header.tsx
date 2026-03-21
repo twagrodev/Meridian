@@ -1,5 +1,6 @@
 "use client";
 
+import { Suspense } from "react";
 import { useSession, signOut } from "next-auth/react";
 import { Button } from "@/components/ui/button";
 import {
@@ -11,6 +12,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { LogOut, User } from "lucide-react";
+import { WeekSelector } from "@/components/shared/WeekSelector";
 
 function getInitials(name: string): string {
   return name
@@ -30,7 +32,9 @@ export function Header() {
 
   return (
     <header className="flex h-14 items-center justify-between border-b bg-card px-6">
-      <div />
+      <Suspense fallback={<div className="min-w-[200px]" />}>
+        <WeekSelector />
+      </Suspense>
       {session?.user && (
         <DropdownMenu>
           <DropdownMenuTrigger className="flex items-center gap-2 rounded-md px-2 py-1 hover:bg-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">

@@ -6,6 +6,7 @@ import { StatusBadge } from "@/components/shared/StatusBadge";
 
 export type ShipmentRow = {
   id: string;
+  week: string | null;
   blNumber: string | null;
   lotNumber: string | null;
   producerName: string | null;
@@ -17,6 +18,16 @@ export type ShipmentRow = {
 };
 
 export const shipmentColumns: ColumnDef<ShipmentRow>[] = [
+  {
+    accessorKey: "week",
+    header: "Week",
+    cell: ({ row }) => (
+      <span className="font-mono text-xs font-medium text-muted-foreground">
+        {row.original.week ?? "\u2014"}
+      </span>
+    ),
+    enableSorting: false,
+  },
   {
     accessorKey: "blNumber",
     header: "BL #",

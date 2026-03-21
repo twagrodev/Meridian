@@ -4,11 +4,21 @@ import { KpiCard } from "@/components/shared/KpiCard";
 import { DataTable } from "@/components/shared/DataTable";
 import { shipmentColumns, type ShipmentRow } from "./columns";
 import { NewShipmentDialog } from "./new-shipment-dialog";
+import { parseWeekParams, getWeekDateRange, formatWeekLabel, getISOWeekNumber } from "@/lib/week-utils";
 
-export default async function ShipmentsPage() {
+export default async function ShipmentsPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const params = await searchParams;
+  const { week, year } = parseWeekParams(params);
+  const { start, end } = getWeekDateRange(week, year);
+  const weekLabel = formatWeekLabel(week, year);
+
   const [shipments, producers, vessels] = await Promise.all([
     prisma.shipment.findMany({
-      where: { deletedAt: null },
+      where: { deletedAt: null, eta: { gte: start, lt: end } },
       include: {
         producer: { select: { name: true } },
         vessel: { select: { name: true } },
@@ -24,6 +34,7 @@ export default async function ShipmentsPage() {
 
   const rows: ShipmentRow[] = shipments.map((s) => ({
     id: s.id,
+    week: s.eta ? "W" + getISOWeekNumber(s.eta) : null,
     blNumber: s.blNumber,
     lotNumber: s.lotNumber,
     producerName: s.producer?.name ?? null,
@@ -46,7 +57,7 @@ export default async function ShipmentsPage() {
           Shipment Ledger
         </h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Track all banana import shipments from origin to delivery
+          {weekLabel} &middot; Track all banana import shipments from origin to delivery
         </p>
       </div>
 
