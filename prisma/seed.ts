@@ -343,6 +343,58 @@ async function main() {
   }
 
   console.log(`Seeded: ${users.length} users, ${producers.length} producers, ${vessels.length} vessels, ${containers.length} containers, ${shipments.length} shipments, ${declarations.length} customs declarations, ${inspections.length} inspections, ${plans.length} dispatch plans, 20 documents, 30 scan events`);
+
+  // ─── ShipmentArrivals (wk13 spreadsheet data) ─────────────────────
+  await prisma.shipmentArrival.deleteMany();
+
+  const { readFileSync } = await import("fs");
+  const { join } = await import("path");
+  const rawData = JSON.parse(
+    readFileSync(join(__dirname, "seed-data/shipments_wk13.json"), "utf-8")
+  ) as Array<Record<string, unknown>>;
+
+  const str = (v: unknown): string | null => (v != null ? String(v) : null);
+  const dt = (v: unknown): Date | null => (v != null ? new Date(String(v)) : null);
+  const int = (v: unknown): number | null => (v != null ? Number(v) : null);
+
+  for (const row of rawData) {
+    await prisma.shipmentArrival.create({
+      data: {
+        week: Number(row["Week"]),
+        lot: Number(row["Lot"]),
+        packingDate: dt(row["Packing date"]),
+        eta: dt(row["ETA"]),
+        etd: dt(row["ETD"]),
+        terminal: str(row["Terminal"]),
+        vessel: str(row["Vessel"]),
+        bl: str(row["BL"]),
+        sealNumbers: str(row["Seal number(s)"]),
+        t1: str(row["T1"]),
+        weighing: str(row["Weighing"]),
+        customsReg: str(row["Customs_reg"]),
+        carrier: str(row["Carrier"]),
+        container: str(row["Container"]),
+        dateIn: dt(row["Date_in"]),
+        dateOut: dt(row["Date_out"]),
+        terminalStatus: str(row["Terminal_status"]),
+        scan: str(row["Scan"]),
+        transporter: str(row["Transporter"]),
+        qcInstructions: str(row["QC instructions"]),
+        warehouse: str(row["Warehouse"]),
+        shipper: str(row["Shipper"]),
+        customer: str(row["Customer"]),
+        coo: str(row["CoO"]),
+        brand: str(row["Brand"]),
+        package: str(row["Package"]),
+        order: str(row["Order"]),
+        amount: int(row["Amount"]),
+        coi: str(row["COI"]),
+        productDesc: str(row["Product_desc"]),
+        mrnArn: str(row["MRN/ARN"]),
+      },
+    });
+  }
+  console.log(`Seeded: ${rawData.length} shipment arrivals`);
 }
 
 main()

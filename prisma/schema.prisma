@@ -280,6 +280,53 @@ model ScanEvent {
   warehouse Warehouse? @relation(fields: [warehouseId], references: [id])
 }
 
+// ─── ShipmentArrival ──────────────────────────────────────────
+// Flat, 31-column model matching the operational spreadsheet.
+// One row per product line (multiple rows can share a Lot/Container).
+// Future: data source will swap from Prisma to Google Sheets API.
+
+model ShipmentArrival {
+  id              String    @id @default(cuid())
+  week            Int                               // Week number (12, 13, ...)
+  lot             Int                               // Lot number (70272)
+  packingDate     DateTime?                         // Packing date
+  eta             DateTime?                         // ETA — display as DD-MM HH:MM
+  etd             DateTime?                         // ETD — display as DD-MM HH:MM
+  terminal        String?                           // ECTD, K730, K1742, RWG, ZZC
+  vessel          String?                           // Full vessel name
+  bl              String?                           // Bill of Lading number
+  sealNumbers     String?                           // Seal numbers (space/slash-separated)
+  t1              String?                           // Transit doc type (T1, NVT)
+  weighing        String?                           // OK, FYCO, NVT
+  customsReg      String?                           // IM A, EX A, ZZC
+  carrier         String?                           // MSC, MAERSK, CMA CGM, etc.
+  container       String?                           // Container ID (SZLU9108112)
+  dateIn          DateTime?                         // Date in — display as DD-MM
+  dateOut         DateTime?                         // Date out — display as DD-MM
+  terminalStatus  String?                           // Nog niet gelost, Bezig, Gelost, Binnen
+  scan            String?                           // "x" or null
+  transporter     String?                           // GROOT, ZZC
+  qcInstructions  String?                           // Free text QC notes
+  warehouse       String?                           // GROOT, EFP, ZZC
+  shipper         String?                           // GALWAY, GUABO, AGRICERT
+  customer        String?                           // Customer name
+  coo             String?                           // Country of Origin (CR, EC, CO, PA, PE)
+  brand           String?                           // Brand/label code
+  package         String?                           // BANAVAC, POLYPACK
+  order           String?                           // Order reference
+  amount          Int?                              // Box count
+  coi             String?                           // Certificate of Inspection ref
+  productDesc     String?                           // Product description
+  mrnArn          String?                           // MRN or ARN reference
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([week])
+  @@index([lot])
+  @@index([bl])
+  @@index([container])
+}
+
 // ─── ComboSetting ─────────────────────────────────────────────
 // Ported from AgroDash combo_settings.json
 // Defines which extraction fields to display/use per carrier+docType combo
