@@ -18,18 +18,16 @@ import type { ShipmentRow } from "@/lib/queries/shipment-arrivals";
 import type { ColumnPreference } from "@/lib/actions/column-prefs";
 
 /**
- * Compare Date_in (DD-MM) with ETD (DD-MM HH:MM).
- * Returns true if dateIn is on or before ETD date (warning condition).
+ * Normalize a date input: accepts D-M, DD-M, D-MM, DD-MM and pads to DD-MM.
+ * Returns null if invalid.
  */
-function compareDdmmDates(dateIn: string, etd: string): boolean {
-  // dateIn is "DD-MM", etd is "DD-MM HH:MM"
-  const [dIn, mIn] = dateIn.split("-").map(Number);
-  const [dEtd, mEtd] = etd.split("-").map(Number);
-  if (!dIn || !mIn || !dEtd || !mEtd) return false;
-  // Compare month first, then day
-  if (mIn < mEtd) return true;
-  if (mIn > mEtd) return false;
-  return dIn <= dEtd;
+function normalizeDateInput(input: string): string | null {
+  const m = input.match(/^(\d{1,2})-(\d{1,2})$/);
+  if (!m) return null;
+  const day = parseInt(m[1], 10);
+  const month = parseInt(m[2], 10);
+  if (day < 1 || day > 31 || month < 1 || month > 12) return null;
+  return `${String(day).padStart(2, "0")}-${String(month).padStart(2, "0")}`;
 }
 
 type SortKey = string; // column key — may include computed keys like _rowNum, custStatus, inspStatus
@@ -251,12 +249,10 @@ function InlineDateCell({
   value,
   rowId,
   field,
-  warn,
 }: {
   value: string | null;
   rowId: string;
   field: "dateIn" | "dateOut";
-  warn?: boolean;
 }) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
@@ -280,19 +276,32 @@ function InlineDateCell({
     const trimmed = newVal.trim();
     setEditing(false);
 
-    // Validate DD-MM format
-    if (trimmed && !/^\d{2}-\d{2}$/.test(trimmed)) {
-      toast.error("Use DD-MM format (e.g. 23-03)");
+    if (!trimmed) {
+      if (!localValue) return; // was empty, stays empty
+      setLocalValue(null);
+      setSaving(true);
+      const { updateShipmentArrival } = await import("@/lib/actions/shipment-arrival-actions");
+      const result = await updateShipmentArrival(rowId, { [field]: null });
+      setSaving(false);
+      if (result.error) { setLocalValue(value); toast.error(result.error); }
+      else { router.refresh(); }
       return;
     }
 
-    if (trimmed === (localValue ?? "")) return; // no change
+    // Normalize D-M, DD-M, D-MM, DD-MM → DD-MM
+    const normalized = normalizeDateInput(trimmed);
+    if (!normalized) {
+      toast.error("Use DD-MM format (e.g. 23-03 or 3-3)");
+      return;
+    }
 
-    setLocalValue(trimmed || null);
+    if (normalized === localValue) return; // no change
+
+    setLocalValue(normalized);
     setSaving(true);
 
-    // Convert DD-MM to ISO date for storage
-    const isoDate = trimmed ? `2026-${trimmed.split("-")[1]}-${trimmed.split("-")[0]}` : null;
+    const [dd, mm] = normalized.split("-");
+    const isoDate = `2026-${mm}-${dd}`;
 
     const { updateShipmentArrival } = await import("@/lib/actions/shipment-arrival-actions");
     const result = await updateShipmentArrival(rowId, { [field]: isoDate });
@@ -343,11 +352,9 @@ function InlineDateCell({
         "block w-full min-h-[1.25rem] cursor-pointer hover:underline transition-colors",
         saving ? "opacity-50" : "",
         !localValue ? "hover:bg-primary/5 rounded" : "",
-        localValue && warn ? "bg-orange-100 text-orange-800 rounded px-1" : "",
-        localValue && !warn ? "" : "",
       ].join(" ")}
       style={{ color: "black" }}
-      title={warn ? "Container pickup may be difficult — Date_in is on or before ETD" : "Click to edit"}
+      title="Click to edit"
     >
       {localValue ?? "\u00A0"}
     </span>
@@ -976,7 +983,6 @@ export function ArrivalsTable({
                               value={val as string | null}
                               rowId={displayRow.id}
                               field={col.key as "dateIn" | "dateOut"}
-                              warn={col.key === "dateIn" && !!val && !!displayRow.etd && compareDdmmDates(String(val), displayRow.etd)}
                             />
                           )}
                           {!col.isRowNum && col.key !== "dateInDay" && col.key !== "dateIn" && col.key !== "dateOut" && !isStatusCol && (val != null ? String(val) : "")}
