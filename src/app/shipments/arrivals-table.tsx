@@ -1,51 +1,237 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef, useEffect, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { Input } from "@/components/ui/input";
-import { Search, ArrowUpDown } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Search, ArrowUp, ArrowDown, Filter, X, Check, FolderOpen, FileCheck, ExternalLink, Truck, Route, Pencil } from "lucide-react";
+import { toast } from "sonner";
+import { EditShipmentSheet } from "./edit-sheet";
 import type { ShipmentRow } from "@/lib/queries/shipment-arrivals";
 
 type SortKey = keyof ShipmentRow;
 type SortDir = "asc" | "desc";
 
-const COLUMNS: { key: SortKey; header: string; align?: "right" }[] = [
-  { key: "week", header: "Week" },
-  { key: "lot", header: "Lot" },
-  { key: "packingDate", header: "Packing date" },
-  { key: "eta", header: "ETA" },
-  { key: "etd", header: "ETD" },
-  { key: "terminal", header: "Terminal" },
-  { key: "vessel", header: "Vessel" },
-  { key: "bl", header: "BL" },
-  { key: "sealNumbers", header: "Seal number(s)" },
-  { key: "t1", header: "T1" },
-  { key: "weighing", header: "Weighing" },
-  { key: "customsReg", header: "Customs_reg" },
-  { key: "carrier", header: "Carrier" },
-  { key: "container", header: "Container" },
-  { key: "dateIn", header: "Date_in" },
-  { key: "dateOut", header: "Date_out" },
-  { key: "terminalStatus", header: "Terminal_status" },
-  { key: "scan", header: "Scan" },
-  { key: "transporter", header: "Transporter" },
-  { key: "qcInstructions", header: "QC instructions" },
-  { key: "warehouse", header: "Warehouse" },
-  { key: "shipper", header: "Shipper" },
-  { key: "customer", header: "Customer" },
-  { key: "coo", header: "CoO" },
-  { key: "brand", header: "Brand" },
-  { key: "packageType", header: "Package" },
-  { key: "order", header: "Order" },
-  { key: "amount", header: "Amount", align: "right" },
-  { key: "coi", header: "COI" },
-  { key: "productDesc", header: "Product_desc" },
-  { key: "mrnArn", header: "MRN/ARN" },
+interface ColDef { key: SortKey; header: string; align?: "right"; defaultWidth: number }
+
+const COLUMNS: ColDef[] = [
+  { key: "week", header: "Week", defaultWidth: 50 },
+  { key: "lot", header: "Lot", defaultWidth: 60 },
+  { key: "packingDate", header: "Packing date", defaultWidth: 85 },
+  { key: "eta", header: "ETA", defaultWidth: 90 },
+  { key: "etd", header: "ETD", defaultWidth: 90 },
+  { key: "terminal", header: "Terminal", defaultWidth: 65 },
+  { key: "vessel", header: "Vessel", defaultWidth: 200 },
+  { key: "bl", header: "BL", defaultWidth: 130 },
+  { key: "sealNumbers", header: "Seal number(s)", defaultWidth: 150 },
+  { key: "t1", header: "T1", defaultWidth: 40 },
+  { key: "weighing", header: "Weighing", defaultWidth: 65 },
+  { key: "customsReg", header: "Customs_reg", defaultWidth: 80 },
+  { key: "carrier", header: "Carrier", defaultWidth: 80 },
+  { key: "container", header: "Container", defaultWidth: 110 },
+  { key: "dateIn", header: "Date_in", defaultWidth: 60 },
+  { key: "dateOut", header: "Date_out", defaultWidth: 65 },
+  { key: "terminalStatus", header: "Terminal_status", defaultWidth: 120 },
+  { key: "scan", header: "Scan", defaultWidth: 42 },
+  { key: "transporter", header: "Transporter", defaultWidth: 85 },
+  { key: "qcInstructions", header: "QC instructions", defaultWidth: 120 },
+  { key: "warehouse", header: "Warehouse", defaultWidth: 80 },
+  { key: "shipper", header: "Shipper", defaultWidth: 80 },
+  { key: "customer", header: "Customer", defaultWidth: 80 },
+  { key: "coo", header: "CoO", defaultWidth: 42 },
+  { key: "brand", header: "Brand", defaultWidth: 110 },
+  { key: "packageType", header: "Package", defaultWidth: 80 },
+  { key: "order", header: "Order", defaultWidth: 60 },
+  { key: "amount", header: "Amount", align: "right", defaultWidth: 60 },
+  { key: "coi", header: "COI", defaultWidth: 150 },
+  { key: "productDesc", header: "Product_desc", defaultWidth: 220 },
+  { key: "mrnArn", header: "MRN/ARN", defaultWidth: 170 },
 ];
 
+// ── Column Filter Dropdown (Google Sheets style) ─────────────
+
+function ColumnFilter({
+  columnKey,
+  allValues,
+  selected,
+  onchange,
+}: {
+  columnKey: string;
+  allValues: string[];
+  selected: Set<string>;
+  onchange: (next: Set<string>) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [filterText, setFilterText] = useState("");
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [open]);
+
+  const isFiltered = selected.size < allValues.length;
+  const filtered = filterText
+    ? allValues.filter((v) => v.toLowerCase().includes(filterText.toLowerCase()))
+    : allValues;
+
+  function selectAll() { onchange(new Set(allValues)); }
+  function clearAll() { onchange(new Set()); }
+
+  return (
+    <div className="relative inline-block" ref={ref}>
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); setOpen(!open); }}
+        className={[
+          "ml-0.5 inline-flex items-center justify-center rounded p-0.5 transition-colors",
+          "hover:bg-foreground/10 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-ring",
+          isFiltered ? "text-primary" : "text-muted-foreground/50 hover:text-muted-foreground",
+        ].join(" ")}
+        aria-label={`Filter ${columnKey}`}
+        aria-expanded={open}
+      >
+        <Filter className="h-3 w-3" />
+      </button>
+      {open && (
+        <div
+          className="absolute left-0 top-full mt-1 z-50 w-56 rounded-md border bg-popover text-popover-foreground shadow-md"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="p-2 border-b">
+            <div className="relative">
+              <Search className="absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+              <input
+                type="text"
+                placeholder="Search..."
+                value={filterText}
+                onChange={(e) => setFilterText(e.target.value)}
+                className="w-full rounded border border-input bg-transparent py-1 pl-7 pr-2 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
+                aria-label="Search filter values"
+              />
+            </div>
+          </div>
+          <div className="flex items-center gap-2 px-2 py-1.5 border-b text-xs">
+            <button type="button" onClick={selectAll} className="text-primary hover:underline">Select all</button>
+            <span className="text-muted-foreground">|</span>
+            <button type="button" onClick={clearAll} className="text-primary hover:underline">Clear</button>
+            {isFiltered && (
+              <>
+                <span className="text-muted-foreground">|</span>
+                <span className="text-muted-foreground">{selected.size}/{allValues.length}</span>
+              </>
+            )}
+          </div>
+          <div className="max-h-48 overflow-y-auto p-1">
+            {filtered.map((val) => (
+              <label
+                key={val}
+                className="flex items-center gap-2 rounded px-2 py-1 text-xs cursor-pointer hover:bg-accent transition-colors"
+              >
+                <span className={[
+                  "flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-sm border",
+                  selected.has(val) ? "bg-primary border-primary text-primary-foreground" : "border-input",
+                ].join(" ")}>
+                  {selected.has(val) && <Check className="h-2.5 w-2.5" />}
+                </span>
+                <span className="truncate">{val || "(empty)"}</span>
+              </label>
+            ))}
+            {filtered.length === 0 && (
+              <p className="px-2 py-3 text-center text-xs text-muted-foreground">No matches</p>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Column Resize Handle ─────────────────────────────────────
+
+function ResizeHandle({ onResize }: { onResize: (delta: number) => void }) {
+  const startX = useRef(0);
+
+  function onMouseDown(e: React.MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    startX.current = e.clientX;
+
+    function onMouseMove(ev: MouseEvent) {
+      onResize(ev.clientX - startX.current);
+      startX.current = ev.clientX;
+    }
+    function onMouseUp() {
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+    }
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp);
+  }
+
+  return (
+    <div
+      onMouseDown={onMouseDown}
+      className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-primary/30 active:bg-primary/50 z-40"
+      role="separator"
+      aria-orientation="vertical"
+    />
+  );
+}
+
+// ── Main Table ───────────────────────────────────────────────
+
 export function ArrivalsTable({ data }: { data: ShipmentRow[] }) {
+  const router = useRouter();
   const [search, setSearch] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("lot");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
+  const [columnFilters, setColumnFilters] = useState<Record<string, Set<string>>>({});
+  const [colWidths, setColWidths] = useState<number[]>(() => COLUMNS.map((c) => c.defaultWidth));
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [editOpen, setEditOpen] = useState(false);
+
+  const topScrollRef = useRef<HTMLDivElement>(null);
+  const tableScrollRef = useRef<HTMLDivElement>(null);
+  const tbodyRef = useRef<HTMLTableSectionElement>(null);
+  const syncing = useRef(false);
+
+  // Sync top scrollbar ↔ table scrollbar
+  const handleTopScroll = useCallback(() => {
+    if (syncing.current) return;
+    syncing.current = true;
+    if (tableScrollRef.current && topScrollRef.current) {
+      tableScrollRef.current.scrollLeft = topScrollRef.current.scrollLeft;
+    }
+    syncing.current = false;
+  }, []);
+
+  const handleTableScroll = useCallback(() => {
+    if (syncing.current) return;
+    syncing.current = true;
+    if (topScrollRef.current && tableScrollRef.current) {
+      topScrollRef.current.scrollLeft = tableScrollRef.current.scrollLeft;
+    }
+    syncing.current = false;
+  }, []);
+
+  const totalWidth = colWidths.reduce((a, b) => a + b, 0);
+
+  function resizeCol(index: number, delta: number) {
+    setColWidths((prev) => {
+      const next = [...prev];
+      next[index] = Math.max(30, next[index] + delta);
+      return next;
+    });
+  }
+
+  // Sticky column left offsets
+  const stickyLeft0 = 0;
+  const stickyLeft1 = colWidths[0];
 
   function handleSort(key: SortKey) {
     if (sortKey === key) {
@@ -56,16 +242,51 @@ export function ArrivalsTable({ data }: { data: ShipmentRow[] }) {
     }
   }
 
+  const uniqueValues = useMemo(() => {
+    const map: Record<string, string[]> = {};
+    for (const col of COLUMNS) {
+      const vals = new Set<string>();
+      for (const row of data) {
+        const v = row[col.key];
+        vals.add(v != null ? String(v) : "");
+      }
+      map[col.key] = Array.from(vals).sort((a, b) => a.localeCompare(b));
+    }
+    return map;
+  }, [data]);
+
+  function getSelected(key: string): Set<string> {
+    return columnFilters[key] ?? new Set(uniqueValues[key]);
+  }
+  function setFilter(key: string, selected: Set<string>) {
+    setColumnFilters((prev) => ({ ...prev, [key]: selected }));
+  }
+  const hasActiveFilters = Object.entries(columnFilters).some(
+    ([key, sel]) => sel.size < (uniqueValues[key]?.length ?? 0)
+  );
+  function clearAllFilters() { setColumnFilters({}); }
+
   const filtered = useMemo(() => {
-    if (!search) return data;
-    const term = search.toLowerCase();
-    return data.filter((row) =>
-      COLUMNS.some((col) => {
-        const val = row[col.key];
-        return val != null && String(val).toLowerCase().includes(term);
-      })
-    );
-  }, [data, search]);
+    let rows = data;
+    for (const [key, selected] of Object.entries(columnFilters)) {
+      const allVals = uniqueValues[key];
+      if (!allVals || selected.size >= allVals.length) continue;
+      rows = rows.filter((row) => {
+        const v = row[key as SortKey];
+        return selected.has(v != null ? String(v) : "");
+      });
+    }
+    if (search) {
+      const term = search.toLowerCase();
+      rows = rows.filter((row) =>
+        COLUMNS.some((col) => {
+          const val = row[col.key];
+          return val != null && String(val).toLowerCase().includes(term);
+        })
+      );
+    }
+    return rows;
+  }, [data, search, columnFilters, uniqueValues]);
 
   const sorted = useMemo(() => {
     return [...filtered].sort((a, b) => {
@@ -81,81 +302,267 @@ export function ArrivalsTable({ data }: { data: ShipmentRow[] }) {
     });
   }, [filtered, sortKey, sortDir]);
 
+  // Clear selection if the selected row is no longer visible
+  useEffect(() => {
+    if (selectedId && !sorted.some((r) => r.id === selectedId)) {
+      setSelectedId(null);
+    }
+  }, [sorted, selectedId]);
+
+  const selectedRow = selectedId ? sorted.find((r) => r.id === selectedId) ?? null : null;
+
+  function toggleSelect(id: string) {
+    setSelectedId((prev) => (prev === id ? null : id));
+  }
+
+  // Keyboard navigation: ArrowUp/Down to move, Enter to toggle, Escape to deselect
+  function handleKeyDown(e: React.KeyboardEvent) {
+    if (e.key === "Escape") {
+      setSelectedId(null);
+      return;
+    }
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      const currentIdx = selectedId ? sorted.findIndex((r) => r.id === selectedId) : -1;
+      let nextIdx: number;
+      if (e.key === "ArrowDown") {
+        nextIdx = currentIdx < sorted.length - 1 ? currentIdx + 1 : 0;
+      } else {
+        nextIdx = currentIdx > 0 ? currentIdx - 1 : sorted.length - 1;
+      }
+      setSelectedId(sorted[nextIdx].id);
+      // Scroll row into view
+      const rows = tbodyRef.current?.children;
+      if (rows?.[nextIdx]) {
+        (rows[nextIdx] as HTMLElement).scrollIntoView({ block: "nearest" });
+      }
+      return;
+    }
+    if (e.key === "Enter" && selectedId) {
+      // Enter is a no-op when already selected (row stays selected)
+      return;
+    }
+  }
+
+  // Action button handlers
+  function handleDocuments() {
+    if (!selectedRow) return;
+    router.push(`/documents?lot=${selectedRow.lot}`);
+  }
+  function handleCustoms() {
+    if (!selectedRow) return;
+    router.push(`/customs?lot=${selectedRow.lot}`);
+  }
+  function handleTraces() {
+    if (!selectedRow) return;
+    toast.info(`TRACES integration coming soon — Lot ${selectedRow.lot}, Container ${selectedRow.container ?? "N/A"}`);
+  }
+  function handleTrucking() {
+    if (!selectedRow) return;
+    toast.info(`Trucking status — Lot ${selectedRow.lot}, Container ${selectedRow.container ?? "N/A"}, Transporter: ${selectedRow.transporter ?? "N/A"}`);
+  }
+  function handleDispatch() {
+    if (!selectedRow) return;
+    router.push(`/dispatch?lot=${selectedRow.lot}`);
+  }
+  function handleEdit() {
+    if (!selectedRow) return;
+    setEditOpen(true);
+  }
+
   return (
-    <div>
-      <div className="mb-3 flex items-center justify-between gap-4">
-        <div className="relative w-72">
-          <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
-          <Input
-            placeholder="Search all columns..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="h-8 pl-8 text-sm"
-            aria-label="Search shipment arrivals"
-          />
+    <div onKeyDown={handleKeyDown} tabIndex={0} className="outline-none">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative w-72">
+            <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+            <Input
+              placeholder="Search all columns..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="h-8 pl-8 text-sm"
+              aria-label="Search shipment arrivals"
+            />
+          </div>
+          {hasActiveFilters && (
+            <button
+              type="button"
+              onClick={clearAllFilters}
+              className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+            >
+              <X className="h-3 w-3" />
+              Clear filters
+            </button>
+          )}
+
+          {/* Action buttons — visible when a row is selected */}
+          <div
+            className={[
+              "flex flex-wrap items-center gap-1.5 transition-all duration-150",
+              selectedRow ? "opacity-100 translate-y-0" : "opacity-0 translate-y-1 pointer-events-none h-0 overflow-hidden",
+            ].join(" ")}
+            aria-hidden={!selectedRow}
+          >
+            <span className="h-5 w-px bg-border mx-1" aria-hidden="true" />
+            <Button variant="outline" size="sm" className="h-7 gap-1.5 text-xs" onClick={handleDocuments}>
+              <FolderOpen className="h-3.5 w-3.5" /> Documents
+            </Button>
+            <Button variant="outline" size="sm" className="h-7 gap-1.5 text-xs" onClick={handleCustoms}>
+              <FileCheck className="h-3.5 w-3.5" /> Customs
+            </Button>
+            <Button variant="outline" size="sm" className="h-7 gap-1.5 text-xs" onClick={handleTraces}>
+              <ExternalLink className="h-3.5 w-3.5" /> TRACES
+            </Button>
+            <Button variant="outline" size="sm" className="h-7 gap-1.5 text-xs" onClick={handleTrucking}>
+              <Truck className="h-3.5 w-3.5" /> Trucking
+            </Button>
+            <Button variant="outline" size="sm" className="h-7 gap-1.5 text-xs" onClick={handleDispatch}>
+              <Route className="h-3.5 w-3.5" /> Dispatch
+            </Button>
+            <Button variant="outline" size="sm" className="h-7 gap-1.5 text-xs" onClick={handleEdit}>
+              <Pencil className="h-3.5 w-3.5" /> Edit
+            </Button>
+          </div>
         </div>
         <p className="text-xs text-muted-foreground shrink-0">
+          {selectedRow && (
+            <span className="font-medium text-primary mr-2">
+              Lot {selectedRow.lot}
+            </span>
+          )}
           Showing {sorted.length} of {data.length} entries
         </p>
       </div>
 
-      <div className="rounded-lg border bg-card overflow-x-auto">
-        <table className="w-max min-w-full text-xs">
-          <thead>
-            <tr className="border-b bg-muted/50">
-              {COLUMNS.map((col, i) => (
-                <th
-                  key={col.key}
-                  className={[
-                    "px-2 py-2 font-medium text-muted-foreground whitespace-nowrap select-none cursor-pointer hover:text-foreground transition-colors",
-                    col.align === "right" ? "text-right" : "text-left",
-                    i < 2 ? "sticky left-0 z-10 bg-muted/50" : "",
-                    i === 0 ? "left-0" : "",
-                    i === 1 ? "left-[3.5rem]" : "",
-                  ].join(" ")}
-                  onClick={() => handleSort(col.key)}
-                  aria-sort={sortKey === col.key ? (sortDir === "asc" ? "ascending" : "descending") : "none"}
-                >
-                  <span className="inline-flex items-center gap-1">
-                    {col.header}
-                    {sortKey === col.key && (
-                      <ArrowUpDown className="h-3 w-3" aria-hidden="true" />
-                    )}
-                  </span>
-                </th>
-              ))}
+      {/* Top scrollbar — mirrors the table's horizontal scroll */}
+      <div
+        ref={topScrollRef}
+        onScroll={handleTopScroll}
+        className="overflow-x-scroll rounded-t-lg border-x border-t"
+        style={{ height: 12 }}
+      >
+        <div style={{ width: totalWidth, height: 1 }} />
+      </div>
+
+      {/* Table container */}
+      <div
+        ref={tableScrollRef}
+        onScroll={handleTableScroll}
+        className="rounded-b-lg border overflow-x-scroll overflow-y-auto"
+        style={{ maxHeight: "calc(100vh - 15rem)" }}
+      >
+        <table className="text-xs border-collapse" style={{ width: totalWidth, tableLayout: "fixed" }}>
+          <thead className="sticky top-0 z-20">
+            <tr>
+              {COLUMNS.map((col, i) => {
+                const isSticky = i < 2;
+                const selected = getSelected(col.key);
+                const allVals = uniqueValues[col.key] ?? [];
+                const isColFiltered = selected.size < allVals.length;
+
+                return (
+                  <th
+                    key={col.key}
+                    className={[
+                      "relative px-2 py-2 font-medium text-muted-foreground select-none border-b border-border",
+                      col.align === "right" ? "text-right" : "text-left",
+                      isSticky ? "z-30" : "",
+                      i === 1 ? "border-r border-border" : "",
+                    ].join(" ")}
+                    style={{
+                      width: colWidths[i],
+                      minWidth: colWidths[i],
+                      maxWidth: colWidths[i],
+                      position: isSticky ? "sticky" : undefined,
+                      left: i === 0 ? stickyLeft0 : i === 1 ? stickyLeft1 : undefined,
+                      backgroundColor: "var(--color-muted, hsl(var(--muted)))",
+                    }}
+                  >
+                    <span className="inline-flex items-center gap-0.5 overflow-hidden">
+                      <span
+                        className="cursor-pointer hover:text-foreground transition-colors truncate"
+                        onClick={() => handleSort(col.key)}
+                      >
+                        {col.header}
+                      </span>
+                      {sortKey === col.key && (
+                        sortDir === "asc"
+                          ? <ArrowUp className="h-3 w-3 shrink-0 text-primary" aria-label="Sorted ascending" />
+                          : <ArrowDown className="h-3 w-3 shrink-0 text-primary" aria-label="Sorted descending" />
+                      )}
+                      <ColumnFilter
+                        columnKey={col.key}
+                        allValues={allVals}
+                        selected={selected}
+                        onchange={(next) => setFilter(col.key, next)}
+                      />
+                      {isColFiltered && (
+                        <span className="h-1.5 w-1.5 rounded-full bg-primary shrink-0" aria-label="Filter active" />
+                      )}
+                    </span>
+                    <ResizeHandle onResize={(delta) => resizeCol(i, delta)} />
+                  </th>
+                );
+              })}
             </tr>
           </thead>
-          <tbody>
-            {sorted.map((row, ri) => (
-              <tr
-                key={row.id}
-                className={[
-                  "border-b transition-colors hover:bg-accent/50",
-                  ri % 2 === 0 ? "bg-card" : "bg-muted/20",
-                ].join(" ")}
-              >
-                {COLUMNS.map((col, ci) => {
-                  const val = row[col.key];
-                  return (
-                    <td
-                      key={col.key}
-                      className={[
-                        "px-2 py-1.5 whitespace-nowrap",
-                        col.align === "right" ? "text-right tabular-nums" : "",
-                        ci < 2 ? "sticky z-10 font-medium" : "",
-                        ci === 0 ? "left-0" : "",
-                        ci === 1 ? "left-[3.5rem]" : "",
-                        ci < 2 && ri % 2 === 0 ? "bg-card" : "",
-                        ci < 2 && ri % 2 !== 0 ? "bg-muted/20" : "",
-                      ].join(" ")}
-                    >
-                      {val != null ? String(val) : ""}
-                    </td>
-                  );
-                })}
-              </tr>
-            ))}
+          <tbody ref={tbodyRef}>
+            {sorted.map((row, ri) => {
+              const isEven = ri % 2 === 0;
+              const isSelected = row.id === selectedId;
+              const rowBg = isSelected
+                ? "var(--color-primary-bg, hsl(var(--primary) / 0.08))"
+                : isEven
+                  ? "var(--color-card, hsl(var(--card)))"
+                  : "var(--color-muted, hsl(var(--muted)))";
+              const stickyBg = isSelected
+                ? "hsl(var(--primary) / 0.08)"
+                : isEven
+                  ? "var(--color-card, hsl(var(--card)))"
+                  : "var(--color-muted, hsl(var(--muted)))";
+              return (
+                <tr
+                  key={row.id}
+                  onClick={() => toggleSelect(row.id)}
+                  className={[
+                    "border-b border-border transition-colors cursor-pointer",
+                    isSelected
+                      ? "ring-1 ring-inset ring-primary/40"
+                      : "hover:bg-accent/50",
+                  ].join(" ")}
+                  style={{ backgroundColor: rowBg }}
+                  aria-selected={isSelected}
+                >
+                  {COLUMNS.map((col, ci) => {
+                    const val = row[col.key];
+                    const isSticky = ci < 2;
+                    return (
+                      <td
+                        key={col.key}
+                        className={[
+                          "px-2 py-1.5 overflow-hidden text-ellipsis whitespace-nowrap",
+                          col.align === "right" ? "text-right tabular-nums" : "",
+                          isSticky ? "z-10 font-medium" : "",
+                          ci === 1 ? "border-r border-border" : "",
+                        ].join(" ")}
+                        style={{
+                          width: colWidths[ci],
+                          minWidth: colWidths[ci],
+                          maxWidth: colWidths[ci],
+                          ...(isSticky ? {
+                            position: "sticky" as const,
+                            left: ci === 0 ? stickyLeft0 : stickyLeft1,
+                            backgroundColor: stickyBg,
+                          } : {}),
+                        }}
+                      >
+                        {val != null ? String(val) : ""}
+                      </td>
+                    );
+                  })}
+                </tr>
+              );
+            })}
             {sorted.length === 0 && (
               <tr>
                 <td colSpan={COLUMNS.length} className="px-4 py-8 text-center text-muted-foreground">
@@ -166,6 +573,15 @@ export function ArrivalsTable({ data }: { data: ShipmentRow[] }) {
           </tbody>
         </table>
       </div>
+
+      {/* Edit sheet */}
+      {selectedRow && (
+        <EditShipmentSheet
+          row={selectedRow}
+          open={editOpen}
+          onOpenChange={setEditOpen}
+        />
+      )}
     </div>
   );
 }
