@@ -1,6 +1,7 @@
 import { Package, Ship, Anchor, Box } from "lucide-react";
 import { KpiCard } from "@/components/shared/KpiCard";
 import { getShipmentArrivals, getAvailableWeeks } from "@/lib/queries/shipment-arrivals";
+import { getColumnPreferences } from "@/lib/actions/column-prefs";
 import { ArrivalsTable } from "./arrivals-table";
 import { WeekFilter } from "./week-filter";
 
@@ -12,9 +13,10 @@ export default async function ShipmentsPage({
   const params = await searchParams;
   const weekParam = params.week ? Number(params.week) : undefined;
 
-  const [rows, weeks] = await Promise.all([
+  const [rows, weeks, columnPrefs] = await Promise.all([
     getShipmentArrivals(weekParam),
     getAvailableWeeks(),
+    getColumnPreferences(),
   ]);
 
   const uniqueLots = new Set(rows.map((r) => r.lot)).size;
@@ -65,7 +67,7 @@ export default async function ShipmentsPage({
         />
       </div>
 
-      <ArrivalsTable data={rows} />
+      <ArrivalsTable data={rows} initialColumnPrefs={columnPrefs} />
     </div>
   );
 }

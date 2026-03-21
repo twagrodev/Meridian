@@ -33,6 +33,20 @@ model User {
   documents   Document[]
   auditLogs   AuditLog[]
   inspections QualityInspection[]
+  preferences UserPreference[]
+}
+
+// ─── UserPreference ──────────────────────────────────────────────────
+
+model UserPreference {
+  id     String @id @default(cuid())
+  userId String
+  key    String   // e.g. "shipments.columns"
+  value  String   // JSON string
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([userId, key])
 }
 
 // ─── Vessel ────────────────────────────────────────────────────────────
