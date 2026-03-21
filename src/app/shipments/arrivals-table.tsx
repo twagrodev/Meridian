@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import {
   Search, ArrowUp, ArrowDown, Filter, X, Check,
   FolderOpen, FileCheck, ExternalLink, Truck, Route, Pencil,
-  ChevronsUpDown, Clock, Package, Ship, Anchor, Box, PanelTopClose, PanelTop,
+  ChevronsUpDown, Clock, Package, Ship, Anchor, Box, PanelTopClose, PanelTop, ShieldCheck,
 } from "lucide-react";
 import { toast } from "sonner";
 import { EditShipmentSheet } from "./edit-sheet";
@@ -243,32 +243,62 @@ function InlineDateCell({
 }) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
-  const [inputVal, setInputVal] = useState("");
+  const [localValue, setLocalValue] = useState(value);
+  const [saving, setSaving] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Sync local display value when parent data changes
+  useEffect(() => { setLocalValue(value); }, [value]);
+
+  // Convert DD-MM display to YYYY-MM-DD for the input
+  function toInputFormat(ddmm: string | null): string {
+    if (!ddmm) return "";
+    const [d, m] = ddmm.split("-");
+    return `2026-${m}-${d}`;
+  }
+
+  // Convert YYYY-MM-DD input back to DD-MM display
+  function toDisplayFormat(iso: string): string {
+    const [, m, d] = iso.split("-");
+    return `${d}-${m}`;
+  }
 
   function startEdit(e: React.MouseEvent) {
     e.stopPropagation();
-    // Convert DD-MM display to YYYY-MM-DD for the date input (assume current year)
-    if (value) {
-      const [d, m] = value.split("-");
-      setInputVal(`2026-${m}-${d}`);
-    } else {
-      setInputVal("");
-    }
     setEditing(true);
-    setTimeout(() => inputRef.current?.focus(), 0);
+    setTimeout(() => {
+      if (inputRef.current) {
+        inputRef.current.value = toInputFormat(localValue);
+        inputRef.current.showPicker?.();
+      }
+    }, 0);
   }
 
-  async function save() {
+  async function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const newIso = e.target.value; // YYYY-MM-DD or ""
     setEditing(false);
+
+    if (!newIso && !localValue) return; // no change
+    if (newIso && localValue && toInputFormat(localValue) === newIso) return; // same value
+
+    const newDisplay = newIso ? toDisplayFormat(newIso) : null;
+    setLocalValue(newDisplay); // optimistic update
+    setSaving(true);
+
     const { updateShipmentArrival } = await import("@/lib/actions/shipment-arrival-actions");
-    await updateShipmentArrival(rowId, { [field]: inputVal || null });
-    router.refresh();
+    const result = await updateShipmentArrival(rowId, { [field]: newIso || null });
+
+    setSaving(false);
+    if (result.error) {
+      setLocalValue(value); // revert on error
+      toast.error(result.error);
+    } else {
+      router.refresh();
+    }
   }
 
   function handleKeyDown(e: React.KeyboardEvent) {
     e.stopPropagation();
-    if (e.key === "Enter") save();
     if (e.key === "Escape") setEditing(false);
   }
 
@@ -277,11 +307,12 @@ function InlineDateCell({
       <input
         ref={inputRef}
         type="date"
-        value={inputVal}
-        onChange={(e) => setInputVal(e.target.value)}
-        onBlur={save}
+        defaultValue={toInputFormat(localValue)}
+        onChange={handleChange}
+        onBlur={() => setEditing(false)}
         onKeyDown={handleKeyDown}
         className="w-full bg-transparent text-foreground text-xs border-none outline-none p-0"
+        autoFocus
       />
     );
   }
@@ -289,10 +320,13 @@ function InlineDateCell({
   return (
     <span
       onClick={startEdit}
-      className="cursor-pointer hover:underline hover:text-primary transition-colors"
+      className={[
+        "cursor-pointer hover:underline hover:text-primary transition-colors",
+        saving ? "opacity-50" : "",
+      ].join(" ")}
       title="Click to edit"
     >
-      {value ?? ""}
+      {localValue ?? "\u00A0"}
     </span>
   );
 }
@@ -328,11 +362,14 @@ export function ArrivalsTable({
   const [editOpen, setEditOpen] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [showTime, setShowTime] = useState(true);
+  const [showCustoms, setShowCustoms] = useState(true);
   const [columnPrefs, setColumnPrefs] = useState<ColumnPreference[]>(
     () => initialColumnPrefs ?? buildDefaultPrefs()
   );
 
   // Resolve prefs → visible ColDefs in order, merging with ALL_COLUMNS
+  const CUSTOMS_KEYS = new Set(["t1", "weighing", "custReg", "custStatus", "mrnArn"]);
+
   const visibleColumns = useMemo(() => {
     const cols: ColDef[] = [];
     for (const pref of columnPrefs) {
@@ -346,8 +383,12 @@ export function ArrivalsTable({
         cols.push(def);
       }
     }
+    // Hide customs columns when toggle is off
+    if (!showCustoms) {
+      return cols.filter((c) => !CUSTOMS_KEYS.has(c.key));
+    }
     return cols;
-  }, [columnPrefs]);
+  }, [columnPrefs, showCustoms]);
 
   const [colWidths, setColWidths] = useState<number[]>(() => visibleColumns.map((c) => c.defaultWidth));
 
@@ -643,6 +684,22 @@ export function ArrivalsTable({
           >
             <Clock className="h-3.5 w-3.5" />
             {showTime ? "HH:MM" : "DD-MM"}
+          </button>
+
+          <button
+            type="button"
+            className={[
+              "inline-flex items-center gap-1.5 rounded-md px-3 h-8 text-xs font-medium transition-colors",
+              "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
+              showCustoms
+                ? "bg-emerald-100 text-emerald-800 hover:bg-emerald-200 border border-emerald-300"
+                : "border border-input bg-transparent hover:bg-accent text-foreground",
+            ].join(" ")}
+            onClick={() => setShowCustoms((v) => !v)}
+            title={showCustoms ? "Hide customs columns" : "Show customs columns"}
+          >
+            <ShieldCheck className="h-3.5 w-3.5" />
+            Customs
           </button>
 
           <div className="relative w-72">
