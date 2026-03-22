@@ -45,6 +45,10 @@ prisma/dev.db-journal
 /uploads/*
 !/uploads/.gitkeep
 
+# screenshots and temp files
+*.png
+*.xlsx
+
 # vercel
 .vercel
 
